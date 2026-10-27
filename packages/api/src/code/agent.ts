@@ -1,4 +1,4 @@
-import { Tools } from 'librechat-data-provider';
+import { Tools, isEphemeralAgentId, resolveStatefulCodeEnvironment } from 'librechat-data-provider';
 import type { Agent, StatefulCodeEnvironment } from 'librechat-data-provider';
 import type { IConversation } from '@librechat/data-schemas';
 import type { CodeEnvironmentConfig, CodeExecutionContext } from '~/agents/execution';
@@ -124,17 +124,21 @@ export function resolveAgentCodeFlags(params: AgentCodeFlagsParams): AgentCodeFl
     params.codeExecutionAvailable &&
     agent?.tools?.includes(Tools.execute_code) === true &&
     !attachedEnvironmentOptOut;
-  const statefulCodeEnvironment = normalizeStatefulCodeEnvironment(
-    agent?.stateful_code_environment,
-  );
+  const statefulDefaultEligible = isStatefulDefaultEligible(agent, params.environments);
+  const statefulCodeEnvironment =
+    statefulDefaultEligible &&
+    isEphemeralAgentId(agent?.id) &&
+    agent?.stateful_code_sessions !== true &&
+    agent?.stateful_code_environment == null
+      ? (resolveStatefulCodeEnvironment('user', params.allowedStatefulCodeEnvironments) ?? 'user')
+      : normalizeStatefulCodeEnvironment(agent?.stateful_code_environment);
   const scopeAllowed =
     params.allowedStatefulCodeEnvironments == null ||
     params.allowedStatefulCodeEnvironments.includes(statefulCodeEnvironment);
   const statefulSessions =
     codeEnvAvailable &&
     params.statefulSessionsAvailable &&
-    (agent?.stateful_code_sessions === true ||
-      (scopeAllowed && isStatefulDefaultEligible(agent, params.environments)));
+    (agent?.stateful_code_sessions === true || (scopeAllowed && statefulDefaultEligible));
   if (statefulSessions && !scopeAllowed) {
     throw createStatefulCodeEnvironmentPolicyError(statefulCodeEnvironment);
   }
@@ -218,6 +222,8 @@ export function withRequestCodeInputs({
     ...params,
     requestBody: params.requestBody ?? req.body,
     conversation: req.resolvedConversation,
+    allowedStatefulCodeEnvironments:
+      params.allowedStatefulCodeEnvironments ?? statefulCodeSessions?.allowedEnvironments,
     allowEnvironmentSelection: statefulCodeSessions?.allowEnvironmentSelection,
     inheritedEnvironments: req.codeWorkspaceInheritance,
     environments: statefulCodeSessions?.environments,

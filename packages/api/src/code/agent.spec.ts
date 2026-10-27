@@ -582,3 +582,79 @@ describe('agent code route invariant', () => {
     }
   });
 });
+
+describe('ordinary chat workspace isolation', () => {
+  afterEach(() => {
+    delete process.env.LIBRECHAT_CODE_DEFAULT_PROFILE;
+  });
+
+  it.each(['anthropic', 'ollama'])(
+    'keeps %s model switches in one conversation workspace',
+    (provider) => {
+      process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'stateful';
+      const params = {
+        ...baseParams,
+        environments: [{ ...environments[0], default: true }],
+        allowedStatefulCodeEnvironments: ['conversation'] as const,
+      };
+      const agents = ['model-a', 'model-b'].map((model) => ({
+        id: `${provider}__${model}`,
+        tools: [Tools.execute_code],
+      }));
+      const routes = agents.map((agent) => resolveAgentCodeExecution({ ...params, agent }));
+      const first = routes[0].context;
+
+      expect(
+        routes.map(({ context, statefulCodeEnvironment }) => ({
+          profile: context.executionProfile,
+          stateful: context.statefulSessions,
+          scope: statefulCodeEnvironment,
+          environment: context.environmentId,
+          sessionKey: context.codeSessionKey,
+          sessionHint: context.runtimeSessionHint,
+        })),
+      ).toEqual(
+        agents.map(() => ({
+          profile: 'stateful',
+          stateful: true,
+          scope: 'conversation',
+          environment: 'managed',
+          sessionKey: first.codeSessionKey,
+          sessionHint: first.runtimeSessionHint,
+        })),
+      );
+      const executionRoutes = agents.map((agent) =>
+        resolveAgentCodeExecution(
+          withRequestCodeInputs({
+            req: {
+              body: {},
+              config: {
+                endpoints: {
+                  agents: {
+                    statefulCodeSessions: {
+                      allowedEnvironments: params.allowedStatefulCodeEnvironments,
+                      environments: params.environments,
+                    },
+                  },
+                },
+              } as never,
+            },
+            agent,
+            userId: params.userId,
+            conversationId: params.conversationId,
+            codeExecutionAvailable: true,
+            statefulSessionsAvailable: true,
+          }),
+        ),
+      );
+      expect(executionRoutes).toEqual(routes);
+      expect(first.runtimeSessionHint).toMatch(/^v3:[a-f0-9]{12}:conversation:[a-f0-9]{32}$/);
+      const otherConversation = resolveAgentCodeExecution({
+        ...params,
+        agent: agents[0],
+        conversationId: '00000000-0000-4000-8000-000000000002',
+      });
+      expect(otherConversation.context.codeSessionKey).not.toBe(first.codeSessionKey);
+    },
+  );
+});
