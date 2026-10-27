@@ -34,6 +34,46 @@ describe('definitions.ts', () => {
   });
 
   describe('loadToolDefinitions', () => {
+    it.each([true, false])(
+      'uses discovered whole-server tools through search when capability enabled=%s',
+      async (deferredToolsEnabled) => {
+        const result = await loadToolDefinitions(
+          {
+            userId: 'user',
+            agentId: 'agent',
+            tools: ['sys__all__sys_mcp_remote'],
+            mcpServerNames: ['remote'],
+            deferredToolsEnabled,
+            mcpAuthorizationMode: 'nonblocking',
+            toolOptions: { write_mcp_remote: { defer_loading: false } },
+          },
+          {
+            getOrFetchMCPServerTools: async () =>
+              formatMCPServerTools('remote', [
+                { name: 'read', inputSchema: { type: 'object' } },
+                { name: 'write', inputSchema: { type: 'object' } },
+              ]),
+            isBuiltInTool: () => false,
+          },
+        );
+        expect({
+          hasDeferredTools: result.hasDeferredTools,
+          definitions: result.toolDefinitions.map(({ name }) => name).sort(),
+          loading: [...result.toolRegistry].map(([name, tool]) => [name, tool.defer_loading]),
+        }).toStrictEqual({
+          hasDeferredTools: deferredToolsEnabled,
+          definitions: deferredToolsEnabled
+            ? ['read_mcp_remote', 'tool_search', 'write_mcp_remote']
+            : ['read_mcp_remote', 'write_mcp_remote'],
+          loading: [
+            ['read_mcp_remote', deferredToolsEnabled],
+            ['write_mcp_remote', false],
+            ...(deferredToolsEnabled ? [['tool_search', undefined]] : []),
+          ],
+        });
+      },
+    );
+
     it.each([undefined, false, true])(
       'gates selected comparison definitions on explicit opt-in (%p)',
       async (githubCompareEnabled) => {

@@ -176,6 +176,25 @@ describe('shouldDeferMCPOAuthSignIn', () => {
 });
 
 describe('createMCPOAuthDeferral', () => {
+  it("never replays another request's pending OAuth flow in nonblocking mode", () => {
+    const pendingOAuthServers = new Set<string>();
+    const pendingOAuthStarts = new Map<string, unknown>();
+    const tracker = createMCPOAuthDeferral({
+      authorizationMode: 'nonblocking',
+      tools: ['sys__all__sys_mcp_remote'],
+      deferredToolsEnabled: false,
+      pendingOAuthServers,
+      pendingOAuthStarts,
+      rememberAvailableTools: jest.fn(),
+    });
+    expect(tracker.skipTurnStartOAuth('remote')).toBe(true);
+    expect(tracker.hasSignInDecision('remote')).toBe(false);
+    expect({ servers: [...pendingOAuthServers], starts: [...pendingOAuthStarts] }).toStrictEqual({
+      servers: [],
+      starts: [],
+    });
+  });
+
   const declared = (name: string, description: string): LCFunctionTool => ({
     type: 'function',
     ['function']: {

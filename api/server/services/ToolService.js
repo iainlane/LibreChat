@@ -28,6 +28,7 @@ const {
   getReplayablePendingMCPOAuthStart,
   getMCPServerNamesFromTools,
   createMCPOAuthDeferral,
+  createMCPInitializationPolicy,
   buildMCPAuthToolCall,
   buildMCPAuthStepId,
   buildMCPAuthRunStepEvent,
@@ -123,7 +124,7 @@ const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/pro
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const repositoryInstructionLoader = createRepositoryInstructionLoader();
 const { createOnSearchResults } = require('~/server/services/Tools/search');
-const { reinitMCPServer } = require('~/server/services/Tools/mcp');
+const { reinitMCPServer, loadMCPServerCatalogs } = require('~/server/services/Tools/mcp');
 const {
   createMCPPermissionContext,
   resolveMcpServerContext,
@@ -1170,6 +1171,7 @@ async function loadToolDefinitionsWrapper({
    *  closure must look up EXACTLY the name it is given. */
   const approvalMetadata = createMCPToolApprovalMetadata();
   const oauthDeferral = createMCPOAuthDeferral({
+    authorizationMode: appConfig?.mcpSettings?.authorizationMode,
     tools: defsFilteredTools,
     toolOptions: agent.tool_options,
     deferredToolsEnabled,
@@ -1179,7 +1181,7 @@ async function loadToolDefinitionsWrapper({
     pendingOAuthStarts,
     rememberAvailableTools: rememberMCPAvailableTools,
   });
-  const getOrFetchMCPServerTools = async (userId, serverName) => {
+  const getEagerMCPServerTools = async (userId, serverName) => {
     const addPendingOAuthServer = async () => {
       const pendingOAuthStart = await getReplayablePendingMCPOAuthStart({
         flowManager,
@@ -1284,7 +1286,7 @@ async function loadToolDefinitionsWrapper({
     return oauthDeferral.resolveReconnectTools(serverName, serverConfig, result?.availableTools);
   };
 
-  const refreshMCPServerTools = async (_userId, serverName) => {
+  const refreshEagerMCPServerTools = async (_userId, serverName) => {
     if (oauthDeferral.hasSignInDecision(serverName)) {
       return null;
     }
@@ -1318,6 +1320,50 @@ async function loadToolDefinitionsWrapper({
     rememberMCPAvailableTools(serverName, result?.availableTools);
     return result?.availableTools || null;
   };
+
+  const mcpInitialization = createMCPInitializationPolicy(
+    {
+      authorizationMode: appConfig?.mcpSettings?.authorizationMode,
+      initializationTimeoutMs: appConfig?.mcpSettings?.initializationTimeoutMs,
+      selectedTools: defsFilteredTools,
+      knownServerNames: [...(mcpServerNames ?? []), ...mcpRawServerNames],
+      accessibleServerNames: defsAccessibleServerNames,
+      signal,
+    },
+    {
+      getEagerTools: getEagerMCPServerTools,
+      refreshEagerTools: refreshEagerMCPServerTools,
+      getServerConfig: (serverName, userId) =>
+        getMCPServersRegistry().getServerConfig(serverName, userId, configServers, req.user?.role, {
+          idOnTheSource: req.user?.idOnTheSource,
+        }),
+      captureServer: (serverName, config) =>
+        approvalMetadata.capture({
+          serverName,
+          config,
+          user: req.user,
+          body: runtimeRequestBody,
+          customUserVars: userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`],
+        }),
+      rememberAvailableTools: rememberMCPAvailableTools,
+      loadPassiveCatalogs: (servers, discoveryOptions) =>
+        loadMCPServerCatalogs({
+          user: req.user,
+          servers,
+          upstreamTokenProvider,
+          upstreamTokenProviderResolver,
+          oboIdentityContext,
+          signal,
+          recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
+          mcpApps,
+          requestBody: runtimeRequestBody,
+          userMCPAuthMap,
+          ...discoveryOptions,
+        }),
+    },
+  );
+  const getOrFetchMCPServerTools = mcpInitialization.getTools;
+  const refreshMCPServerTools = mcpInitialization.refreshTools;
 
   const getActionToolDefinitions = async (agentId, actionToolNames) => {
     if (agentId !== agent.id || preparedActionSnapshot == null) {
@@ -1401,6 +1447,7 @@ async function loadToolDefinitionsWrapper({
       githubCompareEnabled: appConfig?.githubCompare?.enabled,
       toolOptions: agent.tool_options,
       deferredToolsEnabled,
+      mcpAuthorizationMode: appConfig?.mcpSettings?.authorizationMode,
       programmaticToolsEnabled,
       codeExecutionEnabled,
       codeExecutionContext: resolvedCodeExecutionContext,
@@ -1422,7 +1469,7 @@ async function loadToolDefinitionsWrapper({
   /** OAuth discovery must not reconnect (or prompt for) a server whose
    *  definitions the collision filter deliberately rejected. */
   for (const serverName of getMCPServerNamesFromTools(defsFilteredTools, mcpServerNames)) {
-    if (oauthDeferral.hasSignInDecision(serverName)) {
+    if (oauthDeferral.skipTurnStartOAuth(serverName)) {
       continue;
     }
 
@@ -1504,6 +1551,7 @@ async function loadToolDefinitionsWrapper({
           githubCompareEnabled: appConfig?.githubCompare?.enabled,
           toolOptions: agent.tool_options,
           deferredToolsEnabled,
+          mcpAuthorizationMode: appConfig?.mcpSettings?.authorizationMode,
           programmaticToolsEnabled,
           codeExecutionEnabled,
           codeExecutionContext: resolvedCodeExecutionContext,
@@ -1530,9 +1578,13 @@ async function loadToolDefinitionsWrapper({
     }
   }
 
-  if (hasExpectedMCPTools && mcpResolution?.resolvedToolCount === 0) {
-    throw createExpectedMCPToolsUnavailableError(agent.name);
-  }
+  mcpInitialization.assertToolsAvailable({
+    hasExpectedTools: hasExpectedMCPTools,
+    resolvedToolCount: mcpResolution?.resolvedToolCount,
+    selectedTools: defsFilteredTools,
+    knownServerNames: [...(mcpServerNames ?? []), ...mcpRawServerNames],
+    unavailableError: createExpectedMCPToolsUnavailableError(agent.name),
+  });
 
   /** @type {Record<string, string>} */
   const toolContextMap = {};

@@ -12,6 +12,7 @@ import {
   MCPCatalogCapacityError,
   MCPServerCatalogRecoveryTracker,
   loadMCPServerCatalogs,
+  loadMCPInitializationCatalogs,
   publishMCPAuthorizationMutation,
   readMCPRecoveryGeneration,
   readMCPRecoveryGenerationAround,
@@ -19,6 +20,7 @@ import {
 } from './recovery';
 import { MCP_APPS_CAPABILITY_PROFILE, STANDARD_MCP_CAPABILITY_PROFILE } from '../capabilities';
 import { prepareMCPAuthorizationMutation } from '../authorization';
+import { createMCPInitializationPolicy } from '../initialization';
 import { MCPTokenRefreshUnavailableError } from '../oauth';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -2226,4 +2228,248 @@ it('recovers a catalog without loading an unused shadowed user API key', async (
   );
   expect(loadUserMCPAuthMap).not.toHaveBeenCalled();
   expect(discoverServerTools).toHaveBeenCalledTimes(1);
+});
+
+describe('loadMCPInitializationCatalogs', () => {
+  it.each(['cache', 'snapshot', 'credentials'] as const)(
+    'releases owned lanes when a %s read ignores cancellation',
+    async (stage) => {
+      let releaseCache: (tools: LCAvailableTools | null) => void = () => {};
+      let releaseSnapshot: (snapshot: { tools: null }) => void = () => {};
+      let releaseAuth: (auth: Record<string, Record<string, string>>) => void = () => {};
+      const cached = new Promise<LCAvailableTools | null>((resolve) => {
+        releaseCache = resolve;
+      });
+      const snapshot = new Promise<{ tools: null }>((resolve) => {
+        releaseSnapshot = resolve;
+      });
+      const auth = new Promise<Record<string, Record<string, string>>>((resolve) => {
+        releaseAuth = resolve;
+      });
+      const deps: MCPServerCatalogLoaderDeps = {
+        getCachedServerTools: async (_userId, serverName) => {
+          if (serverName === 'healthy') {
+            return availableTools('healthy');
+          }
+          if (stage === 'cache') {
+            return cached;
+          }
+          return null;
+        },
+        getServerToolFunctionsSnapshot: async () => snapshot,
+        loadUserMCPAuthMap: async () => auth,
+        discoverServerTools: jest.fn(),
+        formatServerTools: jest.fn(),
+        cacheServerTools: jest.fn(),
+      };
+      const load = (serverName: string, stalled: boolean) =>
+        loadMCPInitializationCatalogs(
+          {
+            user,
+            servers: [
+              {
+                serverName,
+                serverConfig:
+                  stalled && stage === 'credentials'
+                    ? withUserVars(serverConfig(serverName))
+                    : serverConfig(serverName),
+              },
+            ],
+            signal: stalled ? AbortSignal.timeout(2) : undefined,
+          },
+          deps,
+        );
+      try {
+        await Promise.all(['one', 'two', 'three'].map((name) => load(name, true)));
+        await expect(load('healthy', false)).resolves.toStrictEqual({
+          serverTools: new Map([['healthy', availableTools('healthy')]]),
+          serversWithoutTools: [],
+          reauthRequiredServers: new Set(),
+          reauthRequiredGenerations: new Map(),
+        });
+      } finally {
+        releaseCache(null);
+        releaseSnapshot({ tools: null });
+        releaseAuth({});
+      }
+    },
+  );
+
+  it('discovers a fast cold server while a peer snapshot remains pending', async () => {
+    const deps: MCPServerCatalogLoaderDeps = {
+      getCachedServerTools: async () => null,
+      getServerToolFunctionsSnapshot: async (_userId, serverName, _config, options) => {
+        const signal = options?.signal;
+        if (serverName === 'slow' && signal && !signal.aborted) {
+          await new Promise<void>((resolve) =>
+            signal.addEventListener('abort', () => resolve(), { once: true }),
+          );
+        }
+        return { tools: null };
+      },
+      discoverServerTools: async () => ({
+        tools: [{ name: 'read', inputSchema: { type: 'object' } }],
+        oauthRequired: false,
+      }),
+      loadUserMCPAuthMap: jest.fn(),
+      cacheServerTools: jest.fn(),
+      formatServerTools: (serverName) => availableTools(serverName),
+    };
+    let catalogLoad: ReturnType<typeof loadMCPInitializationCatalogs> | undefined;
+    const policy = createMCPInitializationPolicy(
+      {
+        authorizationMode: 'nonblocking',
+        initializationTimeoutMs: 20,
+        selectedTools: ['sys__all__sys_mcp_fast', 'sys__all__sys_mcp_slow'],
+        knownServerNames: ['fast', 'slow'],
+      },
+      {
+        getServerConfig: async () => serverConfig('server'),
+        loadPassiveCatalogs: (servers, options) => {
+          catalogLoad = loadMCPInitializationCatalogs(
+            { user, servers, userMCPAuthMap: {}, ...options },
+            deps,
+          );
+          return catalogLoad;
+        },
+        getEagerTools: jest.fn(),
+        refreshEagerTools: jest.fn(),
+        captureServer: jest.fn(),
+        rememberAvailableTools: jest.fn(),
+      },
+    );
+    expect(await policy.getTools(user.id, 'fast')).toStrictEqual(availableTools('fast'));
+    await catalogLoad;
+  });
+
+  it('rejects a cached catalog when required user credentials have been removed', async () => {
+    const deps: MCPServerCatalogLoaderDeps = {
+      discoverServerTools: jest.fn(),
+      loadUserMCPAuthMap: jest.fn(),
+      formatServerTools: jest.fn(),
+      getCachedServerTools: jest.fn().mockResolvedValue(availableTools('private')),
+      getServerToolFunctionsSnapshot: jest.fn(),
+      cacheServerTools: jest.fn(),
+    };
+    const result = await loadMCPInitializationCatalogs(
+      {
+        user,
+        servers: [{ serverName: 'private', serverConfig: withUserVars(serverConfig('private')) }],
+        userMCPAuthMap: {},
+      },
+      deps,
+    );
+    expect(result).toStrictEqual({
+      serverTools: new Map(),
+      serversWithoutTools: ['private'],
+      reauthRequiredServers: new Set(),
+      reauthRequiredGenerations: new Map(),
+    });
+    expect(deps.getCachedServerTools).not.toHaveBeenCalled();
+    expect(deps.getServerToolFunctionsSnapshot).not.toHaveBeenCalled();
+    expect(deps.discoverServerTools).not.toHaveBeenCalled();
+  });
+
+  it('releases scoped discovery lanes after settle grace and caps detached work', async () => {
+    const releases: Array<() => void> = [];
+    const discoverServerTools = jest.fn(
+      () =>
+        new Promise<{ tools: null }>((resolve) => {
+          releases.push(() => resolve({ tools: null }));
+        }),
+    );
+    const deps: MCPServerCatalogLoaderDeps = {
+      discoverServerTools,
+      recoveryTracker: new MCPServerCatalogRecoveryTracker(),
+      loadUserMCPAuthMap: jest.fn(),
+      formatServerTools: jest.fn(),
+      getCachedServerTools: jest.fn(),
+      getServerToolFunctionsSnapshot: jest.fn(),
+      cacheServerTools: jest.fn(),
+    };
+    const load = (conversationId: string) =>
+      loadMCPInitializationCatalogs(
+        {
+          user,
+          servers: [
+            {
+              serverName: conversationId,
+              serverConfig: {
+                type: 'streamable-http',
+                url: 'https://scoped.example.com/mcp',
+                headers: { 'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+              },
+            },
+          ],
+          requestBody: { conversationId },
+          userMCPAuthMap: {},
+          recoveryPolicy: { discoveryTimeoutMs: 2, discoverySettleGraceMs: 2 },
+        },
+        deps,
+      );
+    try {
+      await Promise.all(['one', 'two', 'three'].map(load));
+      await expect(load('four')).resolves.toStrictEqual({
+        serverTools: new Map(),
+        serversWithoutTools: ['four'],
+        reauthRequiredServers: new Set(),
+        reauthRequiredGenerations: new Map(),
+      });
+      expect(discoverServerTools).toHaveBeenCalledTimes(3);
+    } finally {
+      for (const release of releases) {
+        release();
+      }
+    }
+  });
+
+  it('keeps runtime-dependent remote catalogs local to each request and bypasses shared cache', async () => {
+    const server = {
+      serverName: 'runtime',
+      serverConfig: {
+        ...serverConfig('runtime'),
+        headers: { 'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+      },
+    };
+    const discoverServerTools = jest.fn(async (options: ToolDiscoveryOptions) => ({
+      tools: [
+        {
+          name: String(options.requestBody?.conversationId),
+          inputSchema: { type: 'object' as const },
+        },
+      ],
+      oauthRequired: false,
+    }));
+    const deps: MCPServerCatalogLoaderDeps = {
+      discoverServerTools,
+      loadUserMCPAuthMap: jest.fn(),
+      formatServerTools: (_serverName, tools) => availableTools(tools[0].name),
+      getCachedServerTools: jest.fn(),
+      getServerToolFunctionsSnapshot: jest.fn(),
+      cacheServerTools: jest.fn(),
+    };
+    const results = await Promise.all(
+      ['conversation-a', 'conversation-b'].map(async (conversationId) => {
+        const result = await loadMCPInitializationCatalogs(
+          {
+            user,
+            servers: [server],
+            requestBody: { conversationId },
+            userMCPAuthMap: {},
+          },
+          deps,
+        );
+        return [...result.serverTools.values()];
+      }),
+    );
+    expect(results).toStrictEqual([
+      [availableTools('conversation-a')],
+      [availableTools('conversation-b')],
+    ]);
+    expect(discoverServerTools).toHaveBeenCalledTimes(2);
+    expect(deps.getCachedServerTools).not.toHaveBeenCalled();
+    expect(deps.getServerToolFunctionsSnapshot).not.toHaveBeenCalled();
+    expect(deps.cacheServerTools).not.toHaveBeenCalled();
+    expect(deps.loadUserMCPAuthMap).not.toHaveBeenCalled();
+  });
 });

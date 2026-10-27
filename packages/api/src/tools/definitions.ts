@@ -50,6 +50,8 @@ export interface LoadToolDefinitionsParams {
   toolOptions?: AgentToolOptions;
   /** Whether deferred tools feature is enabled */
   deferredToolsEnabled?: boolean;
+  /** Default discovered MCP tools to tool search while preserving explicit per-tool settings. */
+  mcpAuthorizationMode?: 'eager' | 'nonblocking';
   /** Whether programmatic tool calling is enabled */
   programmaticToolsEnabled?: boolean;
   /** Whether code execution is enabled and requested by this agent */
@@ -419,6 +421,7 @@ export async function loadToolDefinitions(
     getAppConfig,
     definitionsOnly: true,
     agentToolOptions: toolOptions,
+    deferMCPToolsByDefault: params.mcpAuthorizationMode === 'nonblocking',
   });
 
   const { toolDefinitions, hasDeferredTools } = classificationResult;

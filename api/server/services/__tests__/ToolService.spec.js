@@ -2478,6 +2478,32 @@ describe('ToolService - Action Capability Gating', () => {
       );
     });
 
+    it.each(['eager', 'nonblocking'])(
+      'refreshes selected stdio tools in %s mode',
+      async (authorizationMode) => {
+        const serverName = 'local';
+        const mcpTool = `read${Constants.mcp_delimiter}${serverName}`;
+        const capabilities = [AgentCapabilities.tools];
+        const req = createMockReq(capabilities);
+        req.config.mcpSettings = { authorizationMode };
+        mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+        mockGetServerConfig.mockResolvedValue({ type: 'stdio', command: 'local-mcp', args: [] });
+        mockLoadToolDefinitions.mockImplementation(async (params, dependencies) => {
+          await dependencies.refreshMCPServerTools(params.userId, serverName);
+          return { toolDefinitions: [], toolRegistry: new Map(), hasDeferredTools: false };
+        });
+        reinitMCPServer.mockResolvedValue({ availableTools: {} });
+        await loadAgentTools({
+          req,
+          agent: { id: 'agent_123', tools: [mcpTool] },
+          definitionsOnly: true,
+        });
+        expect(reinitMCPServer).toHaveBeenCalledWith(
+          expect.objectContaining({ serverName, forceNew: true }),
+        );
+      },
+    );
+
     it('forwards OBO context through forced MCP catalog refreshes', async () => {
       const serverName = 'OBO-Refresh';
       const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;

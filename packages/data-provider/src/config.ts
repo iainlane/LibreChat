@@ -4523,6 +4523,8 @@ export const configSchema = z.object({
     .prefault({}),
   mcpSettings: z
     .object({
+      authorizationMode: z.enum(['eager', 'nonblocking']).default('eager'),
+      initializationTimeoutMs: z.number().int().positive().max(60_000).default(3_000),
       allowedDomains: z.array(z.string()).optional(),
       allowedAddresses: allowedAddressesSchema,
       catalogRecovery: z

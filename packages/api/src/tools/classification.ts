@@ -322,6 +322,8 @@ export interface BuildToolClassificationParams {
   gitIdentity?: AgentGitIdentity | null;
   /** Whether the deferred_tools capability is enabled (from agent config) */
   deferredToolsEnabled?: boolean;
+  /** Whether MCP tools without explicit loading settings use tool search. */
+  deferMCPToolsByDefault?: boolean;
   /** Whether the programmatic_tools capability is enabled (from agent config) */
   programmaticToolsEnabled?: boolean;
   /** Whether code execution is enabled and requested by this agent */
@@ -428,6 +430,13 @@ export async function buildToolClassification(
   const mcpToolAliases = collectMCPToolAliases(mcpToolDefs);
   aliasMCPToolOptions(mcpToolAliases, agentToolOptions);
   const toolRegistry: LCToolRegistry = buildToolRegistry(mcpToolDefs, agentToolOptions);
+  if (params.deferMCPToolsByDefault) {
+    for (const [name, definition] of toolRegistry) {
+      if (agentToolOptions?.[name]?.defer_loading == null) {
+        definition.defer_loading = true;
+      }
+    }
+  }
 
   /** Clean up temporary mcpJsonSchema property from tools now that registry is populated */
   cleanupMCPToolSchemas(mcpTools);

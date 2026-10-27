@@ -4,8 +4,13 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { IUser } from '@librechat/data-schemas';
 import type { LCAvailableTools, ParsedServerConfig, ToolDiscoveryOptions } from '../types';
 import type { MCPClientCapabilityProfile } from '../capabilities';
+import {
+  hasCustomUserVars,
+  waitUntilDeadline,
+  getMissingCustomUserVars,
+  requiresEphemeralUserConnection,
+} from '../utils';
 import { MCP_APPS_CAPABILITY_PROFILE, STANDARD_MCP_CAPABILITY_PROFILE } from '../capabilities';
-import { hasCustomUserVars, waitUntilDeadline, getMissingCustomUserVars } from '../utils';
 import { usesDirectOpenIDBearerRecovery } from '../openid';
 import { getServerCustomUserVars } from '../auth';
 import { mcpConfig } from '../mcpConfig';
@@ -203,6 +208,20 @@ export interface MCPServerCatalogLoaderDeps extends MCPServerCatalogRecoveryDeps
     capabilityProfile?: MCPClientCapabilityProfile;
   }) => Promise<void>;
 }
+
+export type MCPInitializationServer =
+  | MCPServerCatalogRecoveryInput
+  | {
+      serverName: string;
+      resolveServerConfig: () => Promise<ParsedServerConfig | null | undefined>;
+      capabilityProfile?: MCPClientCapabilityProfile;
+    };
+
+export type MCPServerCatalogObserver = (
+  serverName: string,
+  tools: LCAvailableTools | null,
+  authenticationRequired: boolean,
+) => void;
 
 export interface MCPServerCatalogLoaderResult {
   serverTools: Map<string, LCAvailableTools>;
@@ -700,8 +719,10 @@ async function discoverCandidate(
     signal,
     trackPublication,
     onDetached,
+    requestBody,
   }: {
     signal?: AbortSignal;
+    requestBody?: ToolDiscoveryOptions['requestBody'];
     trackPublication?: PublicationTracker;
     onDetached?: DiscoveryDetacher;
   } = {},
@@ -713,6 +734,7 @@ async function discoverCandidate(
       serverName,
       configServers: { [serverName]: serverConfig },
       customUserVars,
+      requestBody,
       deadlineMs,
       signal,
       onOAuthCredentialsChanging: trackPublications(
@@ -846,6 +868,21 @@ function runCatalogWork(
   });
 }
 
+async function runOwnedCatalogWork(
+  tasks: ReadonlyArray<() => Promise<void>>,
+  signal: AbortSignal | undefined,
+  workScheduled: boolean,
+): Promise<boolean> {
+  if (signal?.aborted) {
+    return true;
+  }
+  if (!workScheduled) {
+    return runCatalogWork(tasks, signal);
+  }
+  await Promise.all(tasks.map((task) => task()));
+  return true;
+}
+
 /**
  * Passively discovers cold MCP catalogs for one request.
  *
@@ -860,6 +897,9 @@ async function recoverMCPServerCatalogsWithState(
     servers: readonly MCPServerCatalogRecoveryInput[];
     signal?: AbortSignal;
     recoveryPolicy?: Partial<MCPServerCatalogRecoveryPolicy>;
+    onServerResult?: MCPServerCatalogObserver;
+    userMCPAuthMap?: Record<string, Record<string, string>>;
+    workScheduled?: boolean;
   },
   deps: MCPServerCatalogRecoveryDeps,
 ): Promise<MCPServerCatalogRecoveryResult> {
@@ -909,12 +949,14 @@ async function recoverMCPServerCatalogsWithState(
   const credentialServers = recoverable.filter(({ serverConfig }) =>
     hasCustomUserVars(serverConfig),
   );
-  const userMCPAuthMap = credentialServers.length
-    ? await deps.loadUserMCPAuthMap(
-        user.id,
-        credentialServers.map(({ serverName }) => serverName),
-      )
-    : {};
+  const userMCPAuthMap =
+    params.userMCPAuthMap ??
+    (credentialServers.length
+      ? await deps.loadUserMCPAuthMap(
+          user.id,
+          credentialServers.map(({ serverName }) => serverName),
+        )
+      : {});
 
   /** A server missing its user-provided credentials fails auth on connect (see issue #10969),
    *  so discovering it would spend a doomed connection on every request. */
@@ -939,7 +981,11 @@ async function recoverMCPServerCatalogsWithState(
   }
 
   const results: Array<RecoveryOutcome | undefined> = [];
-  const admitted = await runCatalogWork(
+  const recordOutcome = (index: number, outcome: RecoveryOutcome): void => {
+    results[index] = outcome;
+    params.onServerResult?.(outcome.serverName, outcome.tools, outcome.state === 'reauth_required');
+  };
+  const admitted = await runOwnedCatalogWork(
     authorized.map((candidate, index) => async () => {
       /** OBO and direct OpenID bearer discovery consume a request's live upstream-token closure,
        * so they must never join another request's flight or outlive that request's cancellation. */
@@ -947,13 +993,16 @@ async function recoverMCPServerCatalogsWithState(
         candidate.serverConfig.obo != null ||
         usesDirectOpenIDBearerRecovery(candidate.serverConfig);
       if (usesRequestCredential) {
-        results[index] = tracker.admitsDiscovery(user, candidate, policy)
-          ? await discoverCandidate(user, candidate, deps, policy, {
-              signal,
-              onDetached: (discovery) =>
-                tracker.detachDiscovery(user, candidate, policy, discovery),
-            })
-          : { serverName: candidate.serverName, tools: null };
+        recordOutcome(
+          index,
+          tracker.admitsDiscovery(user, candidate, policy)
+            ? await discoverCandidate(user, candidate, deps, policy, {
+                signal,
+                onDetached: (discovery) =>
+                  tracker.detachDiscovery(user, candidate, policy, discovery),
+              })
+            : { serverName: candidate.serverName, tools: null },
+        );
         return;
       }
       const observedGeneration = await readMCPRecoveryGeneration(
@@ -1010,9 +1059,10 @@ async function recoverMCPServerCatalogsWithState(
         results[index] = { serverName: candidate.serverName, tools: null };
         return;
       }
-      results[index] = outcome;
+      recordOutcome(index, outcome);
     }),
     signal,
+    params.workScheduled === true,
   );
   if (!admitted) {
     throw new MCPCatalogCapacityError();
@@ -1047,25 +1097,35 @@ export async function recoverMCPServerCatalogs(
 }
 
 /** Loads cached, connected, then passive MCP catalogs for a marketplace-style list request. */
-export async function loadMCPServerCatalogs(
+async function loadMCPServerCatalogsWithScheduling(
   params: {
     user: IUser;
     servers: readonly MCPServerCatalogRecoveryInput[];
     signal?: AbortSignal;
+    refresh?: boolean;
+    onServerResult?: MCPServerCatalogObserver;
+    userMCPAuthMap?: Record<string, Record<string, string>>;
     recoveryPolicy?: Partial<MCPServerCatalogRecoveryPolicy>;
   },
   deps: MCPServerCatalogLoaderDeps,
+  workScheduled = false,
 ): Promise<MCPServerCatalogLoaderResult> {
   const { user, servers, signal } = params;
   const cached: MCPServerCatalogEntry[] = await Promise.all(
     servers.map(async ({ serverName, serverConfig, capabilityProfile }) => {
       try {
-        const tools = await deps.getCachedServerTools(
-          user.id,
-          serverName,
-          serverConfig,
-          capabilityProfile,
-        );
+        const cached =
+          params.refresh || signal?.aborted
+            ? undefined
+            : await waitUntilDeadline(
+                deps.getCachedServerTools(user.id, serverName, serverConfig, capabilityProfile),
+                undefined,
+                signal,
+              );
+        const tools = cached?.settled ? cached.value : null;
+        if (tools != null) {
+          params.onServerResult?.(serverName, tools, false);
+        }
         return { serverName, serverConfig, capabilityProfile, tools, source: 'cache' as const };
       } catch (error) {
         logger.error(`[MCP catalog loader] Failed to read cached tools for ${serverName}:`, error);
@@ -1081,24 +1141,29 @@ export async function loadMCPServerCatalogs(
   );
 
   const snapshots = [...cached];
-  const snapshotsAdmitted = await runCatalogWork(
+  const snapshotsAdmitted = await runOwnedCatalogWork(
     cached.flatMap((entry, index) =>
       entry.tools != null
         ? []
         : [
             async () => {
               try {
-                const snapshot = await deps.getServerToolFunctionsSnapshot(
-                  user.id,
-                  entry.serverName,
-                  entry.serverConfig,
-                  {
-                    deadlineMs: Date.now() + mcpConfig.TOOLS_LIST_TIMEOUT_MS,
-                    signal,
-                    capabilityProfile: entry.capabilityProfile,
-                  },
+                const deadlineMs = Date.now() + mcpConfig.TOOLS_LIST_TIMEOUT_MS;
+                const loaded = await waitUntilDeadline(
+                  deps.getServerToolFunctionsSnapshot(
+                    user.id,
+                    entry.serverName,
+                    entry.serverConfig,
+                    { deadlineMs, signal, capabilityProfile: entry.capabilityProfile },
+                  ),
+                  deadlineMs,
+                  signal,
                 );
+                const snapshot = loaded.settled ? loaded.value : { tools: null };
                 snapshots[index] = { ...entry, ...snapshot, source: 'snapshot' as const };
+                if (snapshot.tools != null) {
+                  params.onServerResult?.(entry.serverName, snapshot.tools, false);
+                }
               } catch (error) {
                 logger.error(
                   `[MCP catalog loader] Failed to read connected tools for ${entry.serverName}:`,
@@ -1110,6 +1175,7 @@ export async function loadMCPServerCatalogs(
           ],
     ),
     signal,
+    workScheduled,
   );
   if (!snapshotsAdmitted) {
     throw new MCPCatalogCapacityError();
@@ -1130,7 +1196,15 @@ export async function loadMCPServerCatalogs(
   if (coldServers.length > 0) {
     try {
       recovered = await recoverMCPServerCatalogsWithState(
-        { user, servers: coldServers, signal, recoveryPolicy: params.recoveryPolicy },
+        {
+          user,
+          servers: coldServers,
+          signal,
+          recoveryPolicy: params.recoveryPolicy,
+          onServerResult: params.onServerResult,
+          userMCPAuthMap: params.userMCPAuthMap,
+          workScheduled,
+        },
         deps,
       );
     } catch (error) {
@@ -1186,4 +1260,121 @@ export async function loadMCPServerCatalogs(
     reauthRequiredServers: recovered.reauthRequiredServers,
     reauthRequiredGenerations: recovered.reauthRequiredGenerations,
   };
+}
+
+/** Loads cached, connected, then passive MCP catalogs with bounded process-wide scheduling. */
+export async function loadMCPServerCatalogs(
+  params: Parameters<typeof loadMCPServerCatalogsWithScheduling>[0],
+  deps: MCPServerCatalogLoaderDeps,
+): Promise<MCPServerCatalogLoaderResult> {
+  return loadMCPServerCatalogsWithScheduling(params, deps);
+}
+
+/** Loads turn-scoped catalogs without publishing or coalescing request-dependent definitions. */
+export async function loadMCPInitializationCatalogs(
+  params: Omit<Parameters<typeof loadMCPServerCatalogs>[0], 'servers'> & {
+    servers: readonly MCPInitializationServer[];
+    requestBody?: ToolDiscoveryOptions['requestBody'];
+  },
+  deps: MCPServerCatalogLoaderDeps,
+): Promise<MCPServerCatalogLoaderResult> {
+  let pendingAuth: ReturnType<MCPServerCatalogLoaderDeps['loadUserMCPAuthMap']> | undefined;
+  const readUserAuth = async () => {
+    if (params.userMCPAuthMap != null) {
+      return params.userMCPAuthMap;
+    }
+    pendingAuth ??= deps.loadUserMCPAuthMap(
+      params.user.id,
+      params.servers.map(({ serverName }) => serverName),
+    );
+    const loaded = await waitUntilDeadline(pendingAuth, undefined, params.signal);
+    return loaded.settled ? loaded.value : undefined;
+  };
+  const result: MCPServerCatalogLoaderResult = {
+    serverTools: new Map(),
+    serversWithoutTools: [],
+    reauthRequiredServers: new Set(),
+    reauthRequiredGenerations: new Map(),
+  };
+  const unavailable = (serverName: string): void => {
+    result.serversWithoutTools.push(serverName);
+    params.onServerResult?.(serverName, null, false);
+  };
+  const policy = { ...DEFAULT_RECOVERY_POLICY, ...params.recoveryPolicy };
+  const tracker = deps.recoveryTracker ?? new MCPServerCatalogRecoveryTracker();
+  const admitted = await runCatalogWork(
+    params.servers.map((input) => async () => {
+      const resolved =
+        'serverConfig' in input
+          ? { settled: true as const, value: input.serverConfig }
+          : await waitUntilDeadline(input.resolveServerConfig(), undefined, params.signal);
+      const serverConfig = resolved.settled ? resolved.value : undefined;
+      if (!serverConfig || params.signal?.aborted) {
+        unavailable(input.serverName);
+        return;
+      }
+      const server: MCPServerCatalogRecoveryInput = {
+        serverName: input.serverName,
+        serverConfig,
+        capabilityProfile: input.capabilityProfile,
+      };
+      const authMap = hasCustomUserVars(serverConfig)
+        ? await readUserAuth()
+        : (params.userMCPAuthMap ?? {});
+      const customUserVars = authMap && getServerCustomUserVars(authMap, server.serverName);
+      if (
+        !authMap ||
+        getMissingCustomUserVars(serverConfig, customUserVars).length > 0 ||
+        params.signal?.aborted
+      ) {
+        unavailable(server.serverName);
+        return;
+      }
+      if (!requiresEphemeralUserConnection(serverConfig)) {
+        const loaded = await loadMCPServerCatalogsWithScheduling(
+          {
+            ...params,
+            servers: [server],
+            userMCPAuthMap: authMap,
+          },
+          deps,
+          true,
+        );
+        for (const [name, tools] of loaded.serverTools) {
+          result.serverTools.set(name, tools);
+        }
+        result.serversWithoutTools.push(...loaded.serversWithoutTools);
+        for (const name of loaded.reauthRequiredServers) {
+          result.reauthRequiredServers.add(name);
+        }
+        for (const [name, generation] of loaded.reauthRequiredGenerations) {
+          result.reauthRequiredGenerations.set(name, generation);
+        }
+        return;
+      }
+      const candidate = { ...server, customUserVars };
+      const discovery: RecoveryOutcome = tracker.admitsDiscovery(params.user, candidate, policy)
+        ? await discoverCandidate(params.user, candidate, deps, policy, {
+            signal: params.signal,
+            requestBody: params.requestBody,
+            onDetached: (work) => tracker.detachDiscovery(params.user, candidate, policy, work),
+          })
+        : { serverName: server.serverName, tools: null };
+      const authenticationRequired = discovery.state === 'reauth_required';
+      if (discovery.tools != null) {
+        result.serverTools.set(server.serverName, discovery.tools);
+      } else {
+        result.serversWithoutTools.push(server.serverName);
+      }
+      if (authenticationRequired) {
+        result.reauthRequiredServers.add(server.serverName);
+      }
+      params.onServerResult?.(server.serverName, discovery.tools, authenticationRequired);
+    }),
+    params.signal,
+  );
+  if (!admitted) {
+    throw new MCPCatalogCapacityError();
+  }
+  return result;
 }

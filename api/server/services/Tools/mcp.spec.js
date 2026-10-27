@@ -19,7 +19,7 @@ const mockInvalidateCachedTools = jest.fn();
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
-  loadMCPServerCatalogs: (...args) => mockLoadCatalogs(...args),
+  loadMCPInitializationCatalogs: (...args) => mockLoadCatalogs(...args),
   getUserMCPAuthMap: (...args) => mockGetUserMCPAuthMap(...args),
   formatMCPServerTools: (...args) => mockFormatMCPServerTools(...args),
 }));

@@ -2,6 +2,58 @@
 
 The mock e2e profile is the safest default for generated tests. It starts LibreChat with `e2e/config/librechat.e2e.yaml`, injects an in-process fake LLM (via `LIBRECHAT_TEST_RUN_HOOK`), creates an authenticated e2e user, and avoids real provider credentials.
 
+## Non-blocking MCP authentication
+
+The HTTP regression uses the real LibreChat application, database, MCP SDK and
+Anthropic client. Its loopback fixture provides the external MCP, OAuth and model
+endpoints. No model run hook or browser is required.
+
+Start the fixture and read the generated endpoint configuration:
+
+```sh
+node e2e/setup/mcp-nonblocking.mjs serve --ready-file /tmp/mcp-auth-ready.json
+```
+
+Start an isolated LibreChat instance with a fresh database and an administrator
+account. Enable `mcpSettings.authorizationMode: nonblocking` and the
+`deferred_tools` agent capability. Configure `mcpServers.oauth-fixture` with the
+`mcpServer` object from the ready file. Set `ANTHROPIC_REVERSE_PROXY` to its
+`origin`, enable Anthropic with a fixture API key, and set `ANTHROPIC_MODELS` to
+its `model`. Set `DOMAIN_SERVER` and `DOMAIN_CLIENT` to the isolated application's
+origin so OAuth callbacks return to that instance.
+
+Run the protocol regression with the test account's password in
+`LIBRECHAT_TEST_PASSWORD`. Replace the fixture URL with `origin` from the ready
+file:
+
+```sh
+npm run e2e:mcp-auth -- \
+  --base-url http://127.0.0.1:3080 \
+  --fixture-url http://127.0.0.1:43117 \
+  --email startup@example.com
+```
+
+The driver adds the fixture's exact loopback address through the administrator
+configuration API. It requires an absent Base profile and uses an optimistic
+revision check. It creates and deletes its test agent; the isolated database
+contains the resulting conversations and Base profile until teardown.
+
+The regression verifies ordinary inference before authentication, explicit
+connection cancellation, automatic discovery after connection, and an actual MCP
+tool call. It also verifies that expired credentials request authentication only
+on a tool call and that cancellation leaves ordinary inference usable. Assertions
+inspect the actual chat stream, persisted replies, connection status and requests
+at the fixture endpoints.
+
+The dotfiles package runs this same driver against the built application in the
+Darwin startup sandbox and Linux NixOS VM. From the dotfiles checkout:
+
+```sh
+direnv exec . nix build \
+  .#checks.aarch64-darwin.librechat-startup \
+  .#checks.x86_64-linux.librechat-startup
+```
+
 ## RUM privacy export regressions
 
 Run the real HyperDX/OpenTelemetry SDK export checks without a running LibreChat,

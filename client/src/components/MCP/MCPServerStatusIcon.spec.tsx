@@ -32,6 +32,28 @@ const requestScopedStatus: MCPServerStatus = {
 };
 
 describe('MCPServerStatusIcon', () => {
+  it('offers an explicit connection action while OAuth is unavailable', () => {
+    const connect = jest.fn();
+    render(
+      <MCPServerStatusIcon
+        serverName="protected-server"
+        serverStatus={{
+          connectionState: 'disconnected',
+          authorizationState: 'needs_authorization',
+          requiresOAuth: true,
+        }}
+        isInitializing={false}
+        canCancel={false}
+        onConfigClick={connect}
+        onCancel={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'com_nav_mcp_connect_server' })).toBeEnabled();
+    expect(connect).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'com_ui_cancel' })).not.toBeInTheDocument();
+  });
+
   it('shows Configure instead of Connect for idle request-scoped custom variables', () => {
     render(
       <MCPServerStatusIcon

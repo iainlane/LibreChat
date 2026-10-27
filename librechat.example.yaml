@@ -650,6 +650,7 @@ actions:
 # Supports wildcards: '*.example.com' matches 'api.example.com', 'staging.example.com', etc.
 # Supports protocol/port restrictions: 'https://api.example.com:8443' restricts to specific protocol/port.
 # mcpSettings:
+#   authorizationMode: nonblocking
 #   # New MCP Apps require explicit opt-in. If omitted, legacy inline HTML remains enabled;
 #   # false disables both MCP Apps and legacy inline HTML.
 #   apps: true

@@ -3,7 +3,7 @@ const {
   formatMCPServerTools,
   getUserMCPAuthMap,
   getMissingCustomUserVars,
-  loadMCPServerCatalogs: loadCatalogs,
+  loadMCPInitializationCatalogs: loadCatalogs,
   resolveMCPReinitializeConfig,
   requiresEphemeralUserConnection,
   getMissingRuntimeBodyPlaceholderFields,
@@ -64,6 +64,10 @@ async function loadMCPServerCatalogs({
   signal,
   recoveryPolicy,
   mcpApps,
+  refresh,
+  onServerResult,
+  requestBody,
+  userMCPAuthMap,
 }) {
   const capabilityProfile = resolveMCPClientCapabilityProfile(mcpApps);
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
@@ -85,6 +89,10 @@ async function loadMCPServerCatalogs({
       servers: servers.map((server) => ({ ...server, capabilityProfile })),
       signal,
       recoveryPolicy,
+      refresh,
+      onServerResult,
+      requestBody,
+      userMCPAuthMap,
     },
     {
       loadUserMCPAuthMap: (userId, serverNames) =>

@@ -157,6 +157,7 @@ export interface MCPOAuthDeferral {
     serverConfig: ParsedServerConfig,
     tools: LCAvailableTools | null | undefined,
   ) => LCAvailableTools | null;
+  skipTurnStartOAuth: (serverName: string) => boolean;
   /** Whether the server's sign-in is already settled this turn: prompted for, or deferred. */
   hasSignInDecision: (serverName: string) => boolean;
 }
@@ -165,6 +166,7 @@ export interface MCPOAuthDeferral {
 export function createMCPOAuthDeferral({
   tools,
   toolOptions,
+  authorizationMode,
   deferredToolsEnabled,
   backgroundToolsEnabled,
   knownServerNames,
@@ -177,6 +179,7 @@ export function createMCPOAuthDeferral({
   deferredToolsEnabled: boolean;
   backgroundToolsEnabled?: boolean;
   knownServerNames?: readonly string[];
+  authorizationMode?: 'eager' | 'nonblocking';
   /** Servers whose turn-start sign-in prompt is queued. */
   pendingOAuthServers: Pick<Set<string>, 'has' | 'delete'>;
   /** Queued turn-start sign-in prompts, by server. */
@@ -241,6 +244,10 @@ export function createMCPOAuthDeferral({
         ? withdrawPrompt(serverName, availableTools)
         : availableTools;
     },
+    skipTurnStartOAuth: (serverName) =>
+      authorizationMode === 'nonblocking' ||
+      pendingOAuthServers.has(serverName) ||
+      deferred.has(serverName),
     hasSignInDecision: (serverName) =>
       pendingOAuthServers.has(serverName) || deferred.has(serverName),
   };
