@@ -38,6 +38,7 @@ jest.mock('@librechat/client', () => ({
 const mockTranslate = (key: string) => key;
 const mockToolAuth = { authenticated: false };
 let mockCachedFiles: object[] = [];
+let mockStartupConfig: object | undefined;
 jest.mock('react-i18next', () => ({
   ...jest.requireActual('react-i18next'),
   useTranslation: () => ({ t: mockTranslate, i18n: { changeLanguage: jest.fn() } }),
@@ -49,7 +50,7 @@ jest.mock('react-i18next', () => ({
 jest.mock('~/data-provider', () => ({
   ...jest.requireActual('~/data-provider'),
   useGetEndpointsQuery: () => ({ data: undefined }),
-  useGetStartupConfig: () => ({ data: undefined }),
+  useGetStartupConfig: () => ({ data: mockStartupConfig }),
   useMCPServersQuery: () => ({ data: undefined, isLoading: false }),
   useVerifyAgentToolAuth: () => ({ data: mockToolAuth }),
   useGetFiles: () => ({ data: mockCachedFiles }),
@@ -260,6 +261,99 @@ describe('File Search deferred upload effects', () => {
     expect(reloaded.getValue()?.fileSearch.isToolEnabled).toBe(true);
     reloaded.unmount();
     clock.mockRestore();
+  });
+});
+
+describe('BadgeRowProvider defaultEnabledTools', () => {
+  const configured = { interface: { defaultEnabledTools: ['execute_code', 'skills'] } };
+
+  function renderChat(conversationId: string | null, specName?: string) {
+    let value: ReturnType<typeof useBadgeRowContext>;
+    const Consumer = () => {
+      value = useBadgeRowContext();
+      return null;
+    };
+    const Tree = ({ id }: { id: string | null }) => (
+      <QueryClientProvider client={new QueryClient()}>
+        <RecoilRoot>
+          <BadgeRowProvider conversationId={id} specName={specName}>
+            <Consumer />
+          </BadgeRowProvider>
+        </RecoilRoot>
+      </QueryClientProvider>
+    );
+    const { rerender, unmount } = render(<Tree id={conversationId} />);
+    return {
+      agent: () => value?.codeInterpreter.ephemeralAgent,
+      setCode: (enabled: boolean) => act(() => value?.codeInterpreter.setToggleState(enabled)),
+      navigate: (id: string | null) => rerender(<Tree id={id} />),
+      unmount,
+    };
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    mockStartupConfig = configured;
+  });
+
+  afterAll(() => {
+    mockStartupConfig = undefined;
+  });
+
+  it.each([
+    {
+      label: 'a new chat',
+      conversationId: null,
+      specName: undefined,
+      expected: { execute_code: true, skills: true },
+    },
+    {
+      label: 'an existing conversation',
+      conversationId: 'convo-existing',
+      specName: undefined,
+      expected: null,
+    },
+    {
+      label: 'a new chat with a model spec',
+      conversationId: null,
+      specName: 'general',
+      expected: null,
+    },
+  ])('starts $label with $expected', ({ conversationId, specName, expected }) => {
+    const view = renderChat(conversationId, specName);
+
+    expect(view.agent()).toStrictEqual(expected);
+    view.unmount();
+  });
+
+  it('keeps a stored choice for a new chat', () => {
+    localStorage.setItem(`${LocalStorageKeys.LAST_CODE_TOGGLE_}new`, 'false');
+    const view = renderChat(null);
+
+    expect(view.agent()).toStrictEqual({ execute_code: false, skills: true });
+    view.unmount();
+  });
+
+  it('applies the defaults when the startup config resolves after mount', () => {
+    mockStartupConfig = undefined;
+    const view = renderChat(null);
+    expect(view.agent()).toBeNull();
+
+    mockStartupConfig = configured;
+    view.navigate(null);
+
+    expect(view.agent()).toStrictEqual({ execute_code: true, skills: true });
+    view.unmount();
+  });
+
+  it('does not reapply a default after the user turns it off', () => {
+    const view = renderChat(null);
+    view.setCode(false);
+    view.navigate('convo-existing');
+    view.navigate(null);
+
+    expect(view.agent()).toStrictEqual({ execute_code: false, skills: true });
+    view.unmount();
   });
 });
 

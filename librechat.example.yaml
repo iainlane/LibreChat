@@ -396,6 +396,11 @@ interface:
   # Valid tool keys: artifacts, execute_code, web_search, file_search, skills.
   # Use 'mcp' (or a specific MCP server name) to pin the MCP servers dropdown.
   # When omitted, tools start unpinned and the MCP dropdown keeps its default (pinned).
+  # Tools switched on in each new chat that does not use a model spec.
+  # A user's stored choice for a tool in a new chat takes precedence.
+  # Valid tool keys: execute_code, web_search, file_search, skills, memory.
+  # defaultEnabledTools:
+  #   - 'execute_code'
   # defaultPinnedTools:
   #   - 'artifacts'
   #   - 'execute_code'
