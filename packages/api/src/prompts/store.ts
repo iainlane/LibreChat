@@ -24,9 +24,17 @@ export function createPromptStore(db: PromptDatabase): Required<PromptStore> {
       const record = await db.getPromptGroup({ _id: groupId });
       return record == null ? null : toPromptGroupRecord(record);
     },
-    getListPromptGroupsByAccess: async ({ accessibleIds, name, category, limit, after }) => {
+    getListPromptGroupsByAccess: async ({
+      accessibleIds,
+      activeConfigGroupIds,
+      name,
+      category,
+      limit,
+      after,
+    }) => {
       const result = await db.getListPromptGroupsByAccess({
         accessibleIds: [...accessibleIds],
+        ...(activeConfigGroupIds === undefined ? {} : { activeConfigGroupIds }),
         name,
         category,
         limit,

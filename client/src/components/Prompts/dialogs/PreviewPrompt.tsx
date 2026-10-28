@@ -1,5 +1,6 @@
 import { OGDialogContent, OGDialog, OGDialogTitle } from '@librechat/client';
 import type { TPromptGroup } from 'librechat-data-provider';
+import type { RefObject } from 'react';
 import PromptDetails from '../display/PromptDetails';
 import { useLocalize } from '~/hooks';
 
@@ -8,7 +9,7 @@ const PreviewPrompt = ({
   chatIndex,
   open,
   onOpenChange,
-  onCloseAutoFocus,
+  triggerRef,
 }: {
   group: TPromptGroup;
   /** The chat composer's index, forwarded to `PromptDetails` so its Use
@@ -17,15 +18,12 @@ const PreviewPrompt = ({
   chatIndex?: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCloseAutoFocus?: () => void;
+  triggerRef?: RefObject<HTMLButtonElement | null>;
 }) => {
   const localize = useLocalize();
   return (
-    <OGDialog open={open} onOpenChange={onOpenChange}>
-      <OGDialogContent
-        className="w-11/12 max-w-5xl overflow-hidden"
-        onCloseAutoFocus={onCloseAutoFocus}
-      >
+    <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>
+      <OGDialogContent className="w-11/12 max-w-5xl overflow-hidden">
         <OGDialogTitle className="sr-only">{localize('com_ui_preview')}</OGDialogTitle>
         <PromptDetails
           group={group}

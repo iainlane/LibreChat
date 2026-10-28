@@ -1,4 +1,5 @@
 export * from './principal';
+export { getConfigPromptIds } from './prompts';
 export * from './string';
 export * from './search';
 export * from './tempChatRetention';

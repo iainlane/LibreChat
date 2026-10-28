@@ -3,7 +3,7 @@ import { getDefaultStore } from 'jotai';
 import userEvent from '@testing-library/user-event';
 import { PermissionBits } from 'librechat-data-provider';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import type { TPromptGroup } from 'librechat-data-provider';
 import { navigationGenerationAtom } from '~/store/navigation';
 import ChatGroupItem from '../ChatGroupItem';
@@ -69,6 +69,12 @@ jest.mock('../../dialogs/VariableDialog', () => ({
   __esModule: true,
   default: ({ open, promptText }: { open: boolean; promptText?: string }) =>
     open ? <div data-testid="variable-dialog">{promptText}</div> : null,
+}));
+
+const mockPreviewAction = jest.fn();
+jest.mock('../../display/PromptDetails', () => ({
+  __esModule: true,
+  default: () => <button onClick={mockPreviewAction}>{'com_ui_prompt_duplicate'}</button>,
 }));
 
 function makeGroup(overrides: Partial<TPromptGroup> = {}): TPromptGroup {
@@ -157,6 +163,19 @@ beforeEach(() => {
 describe('ChatGroupItem menu', () => {
   beforeEach(() => {
     mockMutate.mockClear();
+  });
+
+  it('keeps the Preview trigger mounted so dialog actions work and focus returns to the menu', async () => {
+    const user = userEvent.setup();
+    renderGroup(makeGroup({ source: 'config' }), FULL_BITS);
+    await user.click(screen.getByRole('button', { name: 'com_nav_convo_menu_options' }));
+    await user.click(screen.getByRole('menuitem', { name: 'com_ui_preview' }));
+    const dialog = await screen.findByRole('dialog', { name: 'com_ui_preview' });
+    await user.click(within(dialog).getByRole('button', { name: 'com_ui_prompt_duplicate' }));
+    expect(mockPreviewAction).toHaveBeenCalledTimes(1);
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByRole('menuitem', { name: 'com_ui_preview' })).toHaveFocus();
   });
 
   afterEach(() => {

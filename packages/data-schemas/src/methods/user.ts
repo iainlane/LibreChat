@@ -1,6 +1,7 @@
 import mongoose, { FilterQuery } from 'mongoose';
 import { AUTH_USER_DOC_CACHE_TTL_MS, CacheKeys } from 'librechat-data-provider';
 import type {
+  ChatPromptDefault,
   BalanceRefillMode,
   RefillIntervalUnit,
   StatefulCodeEnvironment,
@@ -196,6 +197,7 @@ export function createUserMethods(
     action: 'install' | 'uninstall',
   ) => Promise<IUser | null>;
   toggleUserMemories: (userId: string, memoriesEnabled: boolean) => Promise<IUser | null>;
+  updateUserChatPrompt: (userId: string, selection: ChatPromptDefault) => Promise<IUser | null>;
   updateUserStatefulCodeEnvironment: (
     userId: string,
     environment: StatefulCodeEnvironment,
@@ -874,6 +876,21 @@ export function createUserMethods(
     return updated;
   }
 
+  async function updateUserChatPrompt(
+    userId: string,
+    selection: ChatPromptDefault,
+  ): Promise<IUser | null> {
+    const updated = await mongoose.models.User.findByIdAndUpdate(
+      userId,
+      { $set: { 'personalization.defaultChatPrompt': selection } },
+      { new: true, runValidators: true },
+    ).lean<IUser>();
+    if (updated) {
+      await invalidateAuthUserDocCache(userId);
+    }
+    return updated;
+  }
+
   async function updateUserStatefulCodeEnvironment(
     userId: string,
     environment: StatefulCodeEnvironment,
@@ -1058,6 +1075,7 @@ export function createUserMethods(
     deleteUserById,
     updateUserPlugins,
     toggleUserMemories,
+    updateUserChatPrompt,
     updateUserStatefulCodeEnvironment,
   };
 }

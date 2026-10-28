@@ -1,4 +1,5 @@
 import type {
+  ChatInstructions,
   CodeApprovalMode,
   CodeEnvironmentMode,
   CodeWorkspaceSelection,
@@ -277,6 +278,7 @@ export interface IConversation extends Document {
   examples?: unknown[];
   modelLabel?: string;
   promptPrefix?: string;
+  chatInstructions?: ChatInstructions;
   temperature?: number;
   top_p?: number;
   topP?: number;

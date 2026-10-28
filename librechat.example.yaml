@@ -99,6 +99,18 @@ projects:
 #     conversationMetadataFields: [conversationId, endpoint, model, modelLabel, spec]
 #     temporaryChats: false
 
+# Deployment-managed text prompts appear read-only in the Prompt Library.
+# Keep each ID stable when editing its text. Users can duplicate an entry to edit it,
+# select an account default, or override the instructions for an ordinary chat.
+# Saved Agents keep their own instructions.
+# prompts:
+#   library:
+#     - id: general-assistant
+#       name: General assistant
+#       prompt: |
+#         Answer clearly and explain uncertainty when it matters.
+#   defaultChatPrompt: general-assistant
+
 # File storage configuration
 # Single strategy for all file types (legacy format, still supported)
 # fileStrategy: "s3"

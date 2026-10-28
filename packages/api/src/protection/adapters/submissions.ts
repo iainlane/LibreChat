@@ -1,4 +1,5 @@
 import { isProxy } from 'node:util/types';
+import type { ChatInstructions } from 'librechat-data-provider';
 import type { ContentFieldMap, ContentSource, JsonPointer, TextContentFragment } from '../types';
 import type { ContentTraversalScope, VisitNestedStringsBudget } from './nested';
 import {
@@ -123,6 +124,7 @@ interface PresetExampleInput {
 export interface PresetContentInput extends PromptRecordInput, ModelParameterContentInput {
   readonly title?: string;
   readonly promptPrefix?: string | null;
+  readonly chatInstructions?: ChatInstructions;
   readonly system?: string;
   readonly context?: string;
   readonly instructions?: string | null;
@@ -279,6 +281,7 @@ export interface ToolArgumentContentInput {
 interface ImportedConversationMetadataInput extends ModelParameterContentInput {
   readonly title?: string;
   readonly promptPrefix?: string | null;
+  readonly chatInstructions?: ChatInstructions;
   readonly system?: string;
   readonly context?: string;
   readonly greeting?: string;
@@ -966,6 +969,15 @@ function appendPresetDefinitionContent(
     });
   add(input?.title, 'name', '/title');
   add(input?.promptPrefix, 'preset_text', '/promptPrefix');
+  if (input?.chatInstructions?.mode === 'custom') {
+    add(input.chatInstructions.text, 'preset_text', '/chatInstructions/text');
+    pushString(fragments, input.chatInstructions.text, {
+      id: 'preset.custom-instructions',
+      path: '/chatInstructions/text',
+      source: 'agent_instruction',
+      field: 'instructions',
+    });
+  }
   add(input?.system, 'system', '/system');
   add(input?.context, 'context', '/context');
   add(input?.instructions, 'instructions', '/instructions');
@@ -1981,6 +1993,7 @@ export function* extractConversationImportContent(
     fragments.push(...extractConversationTitleContent(conversation));
     appendPresetDefinitionContent(fragments, {
       promptPrefix: conversation.promptPrefix,
+      chatInstructions: conversation.chatInstructions,
       system: conversation.system,
       context: conversation.context,
       greeting: conversation.greeting,

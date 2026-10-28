@@ -9,6 +9,8 @@ import {
   resolveMCPAppsPolicy,
 } from 'librechat-data-provider';
 import type {
+  ChatInstructions,
+  ChatPromptDefault,
   AgentModelParameters,
   AgentToolOptions,
   TEphemeralAgent,
@@ -17,6 +19,7 @@ import type {
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { MCPClientCapabilityProfile } from '~/mcp/capabilities';
+import type { ChatPromptService } from '~/prompts/defaults';
 import type { ParsedServerConfig } from '~/mcp/types';
 import {
   requiresEphemeralUserConnection,
@@ -29,11 +32,16 @@ import { synthesizeBackgroundToolOptions } from '~/agents/background';
 import { mergeSynthesizedToolOptions } from '~/agents/selection';
 import { synthesizeIntentToolOptions } from '~/agents/intent';
 import { getCustomEndpointConfig } from '~/app/config';
+import { getSafeErrorMetadata } from '~/utils/errors';
 
 const { mcp_all, mcp_delimiter } = Constants;
-type ModelParametersWithPromptPrefix = AgentModelParameters & { promptPrefix?: string | null };
+type ModelParametersWithPromptPrefix = AgentModelParameters & {
+  promptPrefix?: string | null;
+  chatInstructions?: ChatInstructions;
+};
 
 export interface LoadAgentDeps {
+  resolveChatInstructions?: ChatPromptService['resolveInstructions'];
   /** Resolves the agent without its `versions` history; `version` carries the count. */
   getAgent: (searchParameter: {
     id: string;
@@ -55,10 +63,15 @@ export interface LoadAgentDeps {
 
 export interface LoadAgentParams {
   req: {
-    user?: { id?: string; role?: string };
+    user?: {
+      id?: string;
+      role?: string;
+      personalization?: { defaultChatPrompt?: ChatPromptDefault };
+    };
     config?: AppConfig;
     body?: {
       promptPrefix?: string;
+      chatInstructions?: ChatInstructions;
       ephemeralAgent?: TEphemeralAgent;
     };
   };
@@ -155,10 +168,21 @@ export async function loadEphemeralAgent(
   }
 
   const requestPromptPrefix = req.body?.promptPrefix;
-  const { promptPrefix: modelPromptPrefix, ...safeModelParameters } =
-    model_parameters as ModelParametersWithPromptPrefix;
-  const instructions =
+  const {
+    promptPrefix: modelPromptPrefix,
+    chatInstructions,
+    ...safeModelParameters
+  } = model_parameters as ModelParametersWithPromptPrefix;
+  const legacyInstructions =
     typeof modelPromptPrefix === 'string' ? modelPromptPrefix : requestPromptPrefix;
+  const instructions = deps.resolveChatInstructions
+    ? await deps.resolveChatInstructions({
+        user: { ...req.user, id: userId },
+        config: req.config,
+        chatInstructions,
+        legacyInstructions,
+      })
+    : legacyInstructions;
 
   // Get endpoint config for modelDisplayLabel fallback
   const appConfig = req.config;
@@ -254,4 +278,22 @@ export async function loadAgent(
 
   agent.version ??= agent.versions?.length ?? 0;
   return agent;
+}
+
+async function observeAgentLoad(task: Promise<Agent | null>): Promise<void> {
+  try {
+    await task;
+  } catch (error) {
+    logger.error('[loadAgent] Could not load the requested agent', getSafeErrorMetadata(error));
+  }
+}
+
+/** Observes rejection before endpoint options are consumed, while preserving the failure for initialization. */
+export function deferAgentLoad(
+  params: LoadAgentParams,
+  deps: LoadAgentDeps,
+): Promise<Agent | null> {
+  const task = loadAgent(params, deps);
+  void observeAgentLoad(task);
+  return task;
 }

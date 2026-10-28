@@ -2018,6 +2018,54 @@ describe('User Methods - Database Tests', () => {
     });
   });
 
+  describe('updateUserChatPrompt', () => {
+    test.each([
+      { mode: 'inherit' as const },
+      { mode: 'none' as const },
+      {
+        mode: 'prompt' as const,
+        groupId: '123456789012345678901234',
+        selection: { type: 'production' as const },
+      },
+      {
+        mode: 'prompt' as const,
+        groupId: '123456789012345678901234',
+        selection: { type: 'exact' as const, promptId: '123456789012345678901235' },
+      },
+    ])('persists %j without changing other preferences', async (selection) => {
+      const user = await User.create({
+        email: 'chat-prompt@example.com',
+        provider: 'local',
+        personalization: { memories: false, statefulCodeEnvironment: 'conversation' },
+      });
+      const updated = await methods.updateUserChatPrompt(String(user._id), selection);
+      expect(updated?.personalization).toMatchObject({
+        memories: false,
+        statefulCodeEnvironment: 'conversation',
+        defaultChatPrompt: selection,
+      });
+      expect(updated?.personalization?.defaultChatPrompt).toEqual(selection);
+    });
+
+    test('invalidates cached auth documents after changing the default', async () => {
+      enableAuthUserDocCache();
+      const user = await User.create({
+        email: 'cached-chat-prompt@example.com',
+        provider: 'openid',
+      });
+      const userId = String(user._id);
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId}`;
+      const cache = {
+        get: jest.fn().mockResolvedValue(['chat-prompt-cache']),
+        set: jest.fn().mockResolvedValue(true),
+        delete: jest.fn().mockResolvedValue(true),
+      };
+      const cachedMethods = createUserMethods(mongoose, { getCache: () => cache });
+      await cachedMethods.updateUserChatPrompt(userId, { mode: 'none' });
+      expect(cache.delete.mock.calls).toEqual([['chat-prompt-cache'], [indexKey]]);
+    });
+  });
+
   describe('updateUserStatefulCodeEnvironment', () => {
     test('updates the workspace default without changing memory preferences', async () => {
       const user = await User.create({

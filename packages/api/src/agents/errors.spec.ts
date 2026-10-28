@@ -21,6 +21,7 @@ import {
 } from './errors';
 import { MCPAuthenticationRejectedError, MCPAuthenticationRefreshError } from '~/mcp/errors';
 import { createTerminalRunErrorObserver } from './failures/terminal';
+import { ChatPromptUnavailableError } from '~/prompts/defaults';
 import { OboTokenResolutionError } from '~/mcp/oauth/obo';
 import { assertToolOptionsWithinLimits } from './options';
 import { OpenIDReauthRequiredError } from '~/utils/oidc';
@@ -67,6 +68,7 @@ describe('isFatalAgentInitializationError', () => {
       ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
       ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
       ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
+      ErrorTypes.CHAT_PROMPT_UNAVAILABLE,
       AGENT_ATTACHMENT_LIMIT_EXCEEDED,
       AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
     ].filter((code): code is string => typeof code === 'string'),
@@ -295,6 +297,7 @@ describe('isStepLimitError', () => {
 describe('getAgentErrorMetadata', () => {
   it.each([
     [new OpenIDReauthRequiredError('Sign in again'), 401, undefined],
+    [new ChatPromptUnavailableError(), 409, ErrorTypes.CHAT_PROMPT_UNAVAILABLE],
     [new MCPAuthenticationRejectedError('private', false), 403, 'MCP_AUTHENTICATION_REJECTED'],
     [new MCPAuthenticationRefreshError(), 503, 'MCP_AUTHENTICATION_REFRESH_FAILED'],
   ])('preserves typed MCP statusCode and code: %s', (error, status, code) => {

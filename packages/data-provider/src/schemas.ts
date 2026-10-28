@@ -13,6 +13,7 @@ import {
 import { userSubmittedMessageFieldPathSchema } from './filters';
 import { TFeedback, feedbackSchema } from './feedback';
 import { CODE_APPROVAL_MODES } from './code/approval';
+import { chatInstructionsSchema } from './prompts';
 import { Tools } from './types/tools';
 
 export const isUUID = z.guid();
@@ -1234,6 +1235,7 @@ export const tConversationSchema = z.object({
   userLabel: z.string().optional(),
   model: z.string().nullable().optional(),
   promptPrefix: z.string().nullable().optional(),
+  chatInstructions: chatInstructionsSchema.optional(),
   temperature: z.number().nullable().optional(),
   topP: z.number().optional(),
   topK: z.number().optional(),
@@ -1391,6 +1393,7 @@ export const tQueryParamsSchema = tConversationSchema
      * ; otherwise, a message with `system` role is added to the chat history
      */
     promptPrefix: true,
+    chatInstructions: true,
     // Model parameters
     /** @endpoints openAI, custom, azureOpenAI, google, anthropic, assistants, azureAssistants, bedrock */
     model: true,
@@ -1562,6 +1565,7 @@ export const googleBaseSchema = tConversationSchema.pick({
   model: true,
   modelLabel: true,
   promptPrefix: true,
+  chatInstructions: true,
   examples: true,
   temperature: true,
   maxOutputTokens: true,
@@ -1611,6 +1615,7 @@ const assistantBaseSchema = tConversationSchema.pick({
   instructions: true,
   artifacts: true,
   promptPrefix: true,
+  chatInstructions: true,
   iconURL: true,
   greeting: true,
   spec: true,
@@ -1646,6 +1651,7 @@ const compactAssistantBaseSchema = tConversationSchema.pick({
   assistant_id: true,
   instructions: true,
   promptPrefix: true,
+  chatInstructions: true,
   artifacts: true,
   iconURL: true,
   greeting: true,
@@ -1669,6 +1675,7 @@ export const agentsBaseSchema = tConversationSchema.pick({
   agent_id: true,
   instructions: true,
   promptPrefix: true,
+  chatInstructions: true,
   iconURL: true,
   greeting: true,
   maxContextTokens: true,
@@ -1716,6 +1723,7 @@ export const openAIBaseSchema = tConversationSchema.pick({
   modelLabel: true,
   chatGptLabel: true,
   promptPrefix: true,
+  chatInstructions: true,
   temperature: true,
   top_p: true,
   presence_penalty: true,
@@ -1774,6 +1782,7 @@ export const anthropicBaseSchema = tConversationSchema.pick({
   model: true,
   modelLabel: true,
   promptPrefix: true,
+  chatInstructions: true,
   temperature: true,
   maxOutputTokens: true,
   topP: true,

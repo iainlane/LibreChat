@@ -13,3 +13,8 @@ export { createPromptService } from './service';
 export type { PromptService, PromptServiceDependencies, PromptServiceListResult } from './service';
 export * from './store';
 export * from './types';
+
+export * from './catalog';
+export * from './defaults';
+export * from './preferences';
+export * from './composition';

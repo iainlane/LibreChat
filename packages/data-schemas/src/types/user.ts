@@ -1,4 +1,5 @@
 import type {
+  ChatPromptDefault,
   TUserFavorite,
   RefillIntervalUnit,
   BalanceRefillMode,
@@ -76,6 +77,7 @@ export interface IUser extends Document {
   }>;
   personalization?: {
     memories?: boolean;
+    defaultChatPrompt?: ChatPromptDefault;
     statefulCodeEnvironment?: StatefulCodeEnvironment;
   };
   favorites?: TUserFavorite[];

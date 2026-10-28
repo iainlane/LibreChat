@@ -1,3 +1,4 @@
+const { chatPromptService } = require('~/server/services/Prompts');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 require('events').EventEmitter.defaultMaxListeners = 100;
 const { logger, MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH } = require('@librechat/data-schemas');
@@ -258,6 +259,7 @@ const db = require('~/models');
 const loadAgent = (params) =>
   loadAgentFn(params, {
     getAgent: db.getAgentWithVersionCount,
+    resolveChatInstructions: chatPromptService.resolveInstructions,
     getMCPServerTools,
     getAccessibleMCPServers,
   });

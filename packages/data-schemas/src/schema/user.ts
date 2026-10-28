@@ -186,6 +186,18 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
           type: Boolean,
           default: true,
         },
+        defaultChatPrompt: {
+          type: {
+            mode: { type: String, enum: ['inherit', 'none', 'prompt'], required: true },
+            groupId: { type: String },
+            selection: {
+              type: { type: String, enum: ['production', 'exact'] },
+              promptId: { type: String },
+            },
+          },
+          _id: false,
+          default: undefined,
+        },
         statefulCodeEnvironment: {
           type: String,
           enum: STATEFUL_CODE_ENVIRONMENTS,

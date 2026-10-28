@@ -347,6 +347,7 @@ export const config = (context?: StartupConfigContext) =>
   `${BASE_URL}/api/config${buildQuery({ context })}`;
 
 export const prompts = () => `${BASE_URL}/api/prompts`;
+export const chatPromptPreferences = () => `${prompts()}/default`;
 
 export const addPromptToGroup = (groupId: string) =>
   `${BASE_URL}/api/prompts/groups/${groupId}/prompts`;

@@ -46,12 +46,20 @@ const PromptDetailHeader = ({ group }: PromptDetailHeaderProps) => {
           )}
           {isExternal && (
             <TooltipAnchor
-              description={localize('com_ui_prompt_source_langfuse')}
+              description={localize(
+                group.source === 'config'
+                  ? 'com_ui_prompt_source_config'
+                  : 'com_ui_prompt_source_langfuse',
+              )}
               side="top"
               render={
                 <Cloud
                   className="text-text-secondary h-5 w-5 shrink-0"
-                  aria-label={localize('com_ui_prompt_source_langfuse')}
+                  aria-label={localize(
+                    group.source === 'config'
+                      ? 'com_ui_prompt_source_config'
+                      : 'com_ui_prompt_source_langfuse',
+                  )}
                 />
               }
             />

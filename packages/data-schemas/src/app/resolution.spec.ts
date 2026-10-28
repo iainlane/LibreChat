@@ -144,6 +144,18 @@ describe('mergeConfigOverrides', () => {
     expect(mergeConfigOverrides(base, configs).filters).toEqual(base.filters);
   });
 
+  it('keeps the configured prompt catalog and default at deployment scope', () => {
+    const prompts = {
+      library: [{ id: 'general', name: 'General', prompt: 'Be helpful.' }],
+      defaultChatPrompt: 'general',
+    };
+    const base = { prompts } as AppConfig;
+    const merged = mergeConfigOverrides(base, [
+      fakeConfig({ prompts: { library: [], defaultChatPrompt: 'other' } }, 10, ['prompts']),
+    ]);
+    expect(merged.prompts).toEqual(prompts);
+  });
+
   it('keeps MCP App sandbox limits at deployment scope', () => {
     const base = {
       mcpAppSandbox: {

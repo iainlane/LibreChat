@@ -56,6 +56,7 @@ export enum QueryKeys {
   voices = 'voices',
   customConfigSpeech = 'customConfigSpeech',
   prompts = 'prompts',
+  chatPromptPreferences = 'chatPromptPreferences',
   prompt = 'prompt',
   promptGroups = 'promptGroups',
   allPromptGroups = 'allPromptGroups',
@@ -136,6 +137,7 @@ export const DynamicQueryKeys = {
 } as const;
 
 export enum MutationKeys {
+  updateChatPromptPreferences = 'updateChatPromptPreferences',
   approveCodeSetup = 'approveCodeSetup',
   denyCodeSetup = 'denyCodeSetup',
   resetToolApprovalGrants = 'resetToolApprovalGrants',

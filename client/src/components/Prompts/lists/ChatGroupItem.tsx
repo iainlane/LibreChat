@@ -13,6 +13,7 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { TPromptGroup } from 'librechat-data-provider';
+import type { MenuItemProps } from '~/common';
 import {
   cn,
   detectVariables,
@@ -74,7 +75,7 @@ function ChatGroupItem({
   const groupIsGlobal = group.isPublic === true;
   const { isExternal, canEdit, canDelete } = getPromptGroupPermissions(group, permissionBits);
 
-  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const previewButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const deleteGroup = useDeletePromptGroup({
     onSuccess: () => {
@@ -178,9 +179,12 @@ function ChatGroupItem({
     : localize('com_ui_prompt_group_button_no_category', { name: group.name });
 
   const dropdownItems = useMemo(() => {
-    const items = [
+    const items: MenuItemProps[] = [
       {
         label: localize('com_ui_preview'),
+        hideOnClick: false,
+        ref: previewButtonRef,
+        render: (props) => <button {...props} />,
         onClick: () => setPreviewDialogOpen(true),
         icon: <Eye className="icon-sm text-text-primary me-2" aria-hidden="true" />,
       },
@@ -276,13 +280,21 @@ function ChatGroupItem({
               )}
               {isExternal && (
                 <TooltipAnchor
-                  description={localize('com_ui_prompt_source_langfuse')}
+                  description={localize(
+                    group.source === 'config'
+                      ? 'com_ui_prompt_source_config'
+                      : 'com_ui_prompt_source_langfuse',
+                  )}
                   side="top"
                   render={
                     <span
                       tabIndex={0}
                       role="img"
-                      aria-label={localize('com_ui_prompt_source_langfuse')}
+                      aria-label={localize(
+                        group.source === 'config'
+                          ? 'com_ui_prompt_source_config'
+                          : 'com_ui_prompt_source_langfuse',
+                      )}
                       className="flex shrink-0 items-center"
                     >
                       <Cloud className="text-text-secondary size-3.5" aria-hidden="true" />
@@ -305,7 +317,6 @@ function ChatGroupItem({
                   setIsOpen={setMenuOpen}
                   trigger={
                     <Ariakit.MenuButton
-                      ref={menuButtonRef}
                       aria-label={localize('com_nav_convo_menu_options')}
                       className={rowActionClasses({ open: menuOpen })}
                       onClick={(e) => e.stopPropagation()}
@@ -328,11 +339,7 @@ function ChatGroupItem({
         chatIndex={index}
         open={isPreviewDialogOpen}
         onOpenChange={setPreviewDialogOpen}
-        onCloseAutoFocus={() => {
-          requestAnimationFrame(() => {
-            menuButtonRef.current?.focus({ preventScroll: true });
-          });
-        }}
+        triggerRef={previewButtonRef}
       />
       {isChatRoute && (
         <VariableDialog

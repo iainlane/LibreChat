@@ -68,11 +68,12 @@ export default function usePromptContent(
 export function usePromptContentResolver(): (group: TPromptGroup) => Promise<string> {
   const fetchResolved = useResolvePromptGroupFn();
   return useCallback(
-    (group: TPromptGroup): Promise<string> => {
+    async (group: TPromptGroup): Promise<string> => {
       if (!isExternalPromptGroup(group)) {
-        return Promise.resolve(group.productionPrompt?.prompt ?? '');
+        return group.productionPrompt?.prompt ?? '';
       }
-      return fetchResolved(group._id ?? '').then((resolved) => resolved.prompt);
+      const resolved = await fetchResolved(group._id ?? '');
+      return resolved.prompt;
     },
     [fetchResolved],
   );

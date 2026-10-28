@@ -1,3 +1,4 @@
+jest.mock('../../defaults/Actions', () => ({ __esModule: true, default: () => null }));
 import React from 'react';
 import '@testing-library/jest-dom/extend-expect';
 import { render, screen } from '@testing-library/react';
@@ -197,6 +198,15 @@ describe('PromptForm external (Langfuse) read-only view', () => {
     mockGroup.source = 'langfuse';
     mockPermissionsLoading = false;
     mockPermissionBits = mockAllBits;
+  });
+
+  it('shows configuration-managed prompts as read-only without Langfuse wording', async () => {
+    mockGroup.source = 'config';
+    render(<PromptForm promptId="group-1" />);
+    expect(await screen.findByRole('note')).toHaveTextContent('com_ui_prompt_config_read_only');
+    expect(screen.queryByText(/com_ui_prompt_langfuse_read_only/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('prompt-editor')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('delete-prompt')).not.toBeInTheDocument();
   });
 
   it('shows the Langfuse notice, keeps Share, and renders fields read-only without an editor or delete', async () => {

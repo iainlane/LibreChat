@@ -6,6 +6,7 @@ import { useLocalize, useAuthContext, usePromptContent } from '~/hooks';
 import LangfusePromptMeta from './LangfusePromptMeta';
 import PromptDetailHeader from './PromptDetailHeader';
 import PromptResolvedBody from './PromptResolvedBody';
+import DefaultActions from '../defaults/Actions';
 import PromptVariables from './PromptVariables';
 import PromptActions from './PromptActions';
 
@@ -65,6 +66,13 @@ const PromptDetails = ({
           <span className="text-text-primary font-mono text-sm">/{group.command}</span>
         </div>
       )}
+
+      <DefaultActions
+        key={group._id}
+        group={group}
+        promptText={text}
+        disabled={isLoading || hasError}
+      />
 
       {showActions && (
         <PromptActions

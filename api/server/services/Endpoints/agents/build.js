@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
-const { loadAgent: loadAgentFn } = require('@librechat/api');
+const { chatPromptService } = require('~/server/services/Prompts');
+const { deferAgentLoad: loadAgentFn } = require('@librechat/api');
 const { isAgentsEndpoint, removeNullishValues, Constants } = require('librechat-data-provider');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { getAccessibleMCPServers } = require('~/server/services/MCP');
@@ -8,6 +8,7 @@ const db = require('~/models');
 const loadAgent = (params) =>
   loadAgentFn(params, {
     getAgent: db.getAgentWithVersionCount,
+    resolveChatInstructions: chatPromptService.resolveInstructions,
     getMCPServerTools,
     getAccessibleMCPServers,
   });
@@ -20,9 +21,6 @@ const buildOptions = (req, endpoint, parsedBody, endpointType) => {
     agent_id: isAgentsEndpoint(endpoint) ? agent_id : Constants.EPHEMERAL_AGENT_ID,
     endpoint,
     model_parameters,
-  }).catch((error) => {
-    logger.error(`[/agents/:${agent_id}] Error retrieving agent during build options step`, error);
-    return undefined;
   });
 
   /** @type {import('librechat-data-provider').TConversation | undefined} */

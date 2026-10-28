@@ -19,6 +19,7 @@ const FATAL_AGENT_INITIALIZATION_CODES = new Set(
     ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
     ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
     ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
+    ErrorTypes.CHAT_PROMPT_UNAVAILABLE,
   ].filter((code): code is string => typeof code === 'string'),
 );
 

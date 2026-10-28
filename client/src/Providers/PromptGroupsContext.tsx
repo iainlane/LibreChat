@@ -69,7 +69,11 @@ export const PromptGroupsProvider = ({ children }: { children: ReactNode }) => {
             type: 'prompt',
             value: group.command ?? group.name,
             label: group.name,
-            description: localize('com_ui_prompt_source_langfuse'),
+            description: localize(
+              group.source === 'config'
+                ? 'com_ui_prompt_source_config'
+                : 'com_ui_prompt_source_langfuse',
+            ),
             icon: <Cloud className="h-5 w-5" />,
           };
         }

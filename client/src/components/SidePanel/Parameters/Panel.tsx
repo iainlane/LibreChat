@@ -16,11 +16,14 @@ import {
 import type { TPreset } from 'librechat-data-provider';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { useModelReasoning } from '~/hooks/Endpoint/useModelReasoning';
+import Instructions from '~/components/Prompts/defaults/Instructions';
+import Preferences from '~/components/Prompts/defaults/Preferences';
 import { useChatContext, useLiveAnnouncer } from '~/Providers';
 import { SaveAsPresetDialog } from '~/components/Endpoints';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
 import { groupParameters, hasControl } from './groups';
 import { componentMapping } from './components';
+import { isEphemeralAgent } from '~/common';
 import { logger, cn } from '~/utils';
 import Sections from './Sections';
 
@@ -38,6 +41,7 @@ export default function Parameters() {
 
   const { data: endpointsConfig = {} } = useGetEndpointsQuery();
   const provider = conversation?.endpoint ?? '';
+  const isOrdinaryChat = isEphemeralAgent(conversation?.agent_id);
   const model = conversation?.model ?? '';
   const { modelReasoning } = useModelReasoning(endpointsConfig, provider, model);
 
@@ -165,9 +169,14 @@ export default function Parameters() {
               ? { ...setting, options: bedrockRegions }
               : setting,
           )
-          .filter((setting) => componentMapping[setting.component] != null && hasControl(setting)),
+          .filter(
+            (setting) =>
+              componentMapping[setting.component] != null &&
+              hasControl(setting) &&
+              !(isOrdinaryChat && setting.key === 'promptPrefix'),
+          ),
       ),
-    [visibleParameters, bedrockRegions],
+    [visibleParameters, bedrockRegions, isOrdinaryChat],
   );
 
   const openDialog = useCallback(() => {
@@ -184,6 +193,18 @@ export default function Parameters() {
 
   return (
     <div className="h-auto max-w-full px-3 pt-1 pb-3">
+      {isOrdinaryChat && (
+        <>
+          <Instructions
+            instructions={conversation?.chatInstructions}
+            legacyText={conversation?.promptPrefix}
+            onChange={(chatInstructions) =>
+              setConversation((current) => current && { ...current, chatInstructions })
+            }
+          />
+          <Preferences />
+        </>
+      )}
       <Sections sections={sections} setOption={setOption} conversation={conversation} />
       {/* The two share a row while their labels fit, stack when a translation is too
           long for the panel, and a label longer than the panel itself wraps. */}

@@ -25,6 +25,7 @@ function setup(
     },
   };
   queryClient.setQueryData([QueryKeys.endpoints], endpoints);
+  queryClient.setQueryData([QueryKeys.chatPromptPreferences], { selection: { mode: 'inherit' } });
   queryClient.setQueryData(startupConfigKey(false), startupConfig);
 
   function Conversation() {
@@ -123,5 +124,20 @@ describe.each([
       topP: 0.9,
       topK: 40,
     });
+  });
+});
+
+it('retains explicit no-instructions through model selection, reset and serialisation', () => {
+  setup(EModelEndpoint.openAI, 'gpt-5', {}, {
+    endpoint: EModelEndpoint.openAI,
+    model: 'gpt-5',
+    chatInstructions: { mode: 'none' },
+    conversationId: 'conversation-with-opt-out',
+  } as TConversation);
+  expect(screen.getByRole('radio', { name: 'No instructions' })).toBeChecked();
+  fireEvent.click(screen.getByRole('button', { name: 'Select Opus 5.5' }));
+  fireEvent.click(screen.getByRole('button', { name: /Reset Model Parameters/i }));
+  expect(tConvoUpdateSchema.parse(readConversation()).chatInstructions).toStrictEqual({
+    mode: 'none',
   });
 });

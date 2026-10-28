@@ -1,3 +1,4 @@
+import type { ChatInstructions } from 'librechat-data-provider';
 import type { ContentFieldMap, ContentSource, TextContentFragment } from '../types';
 import type { ModelParameterContentInput } from './submissions';
 import {
@@ -24,6 +25,7 @@ export interface ChatSubmissionBody extends ModelParameterContentInput {
   readonly quotes?: unknown;
   readonly answer?: string;
   readonly promptPrefix?: string | null;
+  readonly chatInstructions?: ChatInstructions;
   readonly system?: string;
   readonly context?: string | null;
   readonly instructions?: string | null;
@@ -44,6 +46,7 @@ export interface ChatSubmissionBody extends ModelParameterContentInput {
   } | null;
   readonly addedConvo?: {
     readonly promptPrefix?: string | null;
+    readonly chatInstructions?: ChatInstructions;
     readonly additional_instructions?: string | null;
     readonly artifacts?: string;
     readonly ephemeralAgent?: {
@@ -140,6 +143,22 @@ export function extractChatContent(
     fragments.push(createFragment('chat.answer', '/answer', body.answer, 'message', 'answer'));
   }
 
+  for (const [selection, path, id] of [
+    [body?.chatInstructions, '/chatInstructions/text', 'chat.instructions.custom'],
+    [
+      body?.addedConvo?.chatInstructions,
+      '/addedConvo/chatInstructions/text',
+      'chat.added-conversation.instructions.custom',
+    ],
+  ] as const) {
+    if (selection?.mode !== 'custom' || selection.text.length === 0) {
+      continue;
+    }
+    fragments.push(
+      createFragment(id, path, selection.text, 'agent_instruction', 'instructions'),
+      createFragment(`${id}.preset`, path, selection.text, 'prompt', 'preset_text'),
+    );
+  }
   if (typeof body?.promptPrefix === 'string' && body.promptPrefix.length > 0) {
     fragments.push(
       createFragment(

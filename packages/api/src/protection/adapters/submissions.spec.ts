@@ -1532,6 +1532,33 @@ describe('submitted content adapters', () => {
     expect(fragments.some(({ text }) => text === 'vendor_content')).toBe(false);
   });
 
+  it.each(['preset', 'import'] as const)('inspects custom instructions in a %s', (kind) => {
+    const chatInstructions = { mode: 'custom' as const, text: 'Custom system instructions.' };
+    const fragments =
+      kind === 'preset'
+        ? extractPresetContent({ chatInstructions })
+        : [
+            ...extractConversationImportContent({
+              conversations: [{ chatInstructions }],
+              messages: [],
+            }),
+          ];
+    expect(fieldValues(fragments)).toEqual([
+      {
+        source: 'prompt',
+        field: 'preset_text',
+        text: chatInstructions.text,
+        path: '/chatInstructions/text',
+      },
+      {
+        source: 'agent_instruction',
+        field: 'instructions',
+        text: chatInstructions.text,
+        path: '/chatInstructions/text',
+      },
+    ]);
+  });
+
   it('classifies normalized conversation imports without traversing raw export fields', () => {
     const conversation = {
       title: 'imported title',

@@ -86,7 +86,11 @@ export interface LangfuseResolvedPrompt {
   readonly sourceUrl?: string;
 }
 
-export type ResolvedPrompt = NativeResolvedPrompt | LangfuseResolvedPrompt;
+export type ConfigResolvedPrompt = Omit<NativeResolvedPrompt, 'source'> & {
+  readonly source: 'config';
+};
+
+export type ResolvedPrompt = NativeResolvedPrompt | LangfuseResolvedPrompt | ConfigResolvedPrompt;
 
 /** The raw creation body plus the server-supplied creator. */
 export type CreatePromptGroupInput = Omit<TCreatePromptRecord, 'authorName'> & {
@@ -217,6 +221,13 @@ export interface PromptSourceAdapter {
   }): Promise<PromptServiceResult<ResolvedPrompt>>;
 }
 
+export interface ConfigPromptCatalogView {
+  projectGroup(group: PromptGroupRecord): PromptGroupRecord | null;
+  matchingGroupIds(filter: { name?: string; category?: string }): readonly string[];
+}
+
+export type ConfigPromptCatalogReader = () => Promise<ConfigPromptCatalogView>;
+
 /**
  * All local group and native-revision operations: the group-keyed storage methods and the
  * revision-keyed native methods. Three mutations, `savePrompt`, `makePromptProduction` and
@@ -229,7 +240,9 @@ export interface PromptSourceAdapter {
 export interface PromptStore {
   getPromptGroup(groupId: string): Promise<PromptGroupRecord | null>;
   getListPromptGroupsByAccess(
-    input: Pick<PromptListInput, 'accessibleIds' | 'name' | 'category' | 'limit' | 'after'>,
+    input: Pick<PromptListInput, 'accessibleIds' | 'name' | 'category' | 'limit' | 'after'> & {
+      readonly activeConfigGroupIds?: readonly string[];
+    },
   ): Promise<PromptListResult>;
   updatePromptGroup(groupId: string, updates: Record<string, unknown>): Promise<PromptGroupRecord>;
   incrementPromptGroupUsage(groupId: string): Promise<{ readonly numberOfGenerations: number }>;
@@ -275,6 +288,7 @@ export interface PromptDatabase {
   }): Promise<{ prompt: string; promptGroup?: { message: string; id: StoredId } }>;
   getListPromptGroupsByAccess(input: {
     accessibleIds: string[];
+    activeConfigGroupIds?: readonly string[];
     name?: string;
     category?: string;
     limit: number | string | null;
@@ -305,7 +319,9 @@ export interface PromptServiceAdapters {
   /** All local group and native-revision storage. */
   readonly store: PromptStore;
   /** The content source per `PromptGroupSource`, resolving a selection only. */
-  readonly sources: Record<PromptGroupSource, PromptSourceAdapter>;
+  readonly sources: Record<Exclude<PromptGroupSource, 'config'>, PromptSourceAdapter> &
+    Partial<Record<'config', PromptSourceAdapter>>;
+  readonly readConfigCatalog?: ConfigPromptCatalogReader;
   readonly grantCreatorOwnership: (input: {
     readonly userId: string;
     readonly groupId: string;

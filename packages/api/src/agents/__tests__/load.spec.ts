@@ -1,19 +1,27 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { Constants, FileSources } from 'librechat-data-provider';
 import { agentSchema, createMethods } from '@librechat/data-schemas';
+import {
+  Constants,
+  FileSources,
+  EModelEndpoint,
+  tConversationSchema,
+} from 'librechat-data-provider';
 import type {
   Agent as LibreChatAgent,
   AgentModelParameters,
   TEphemeralAgent,
   TConversation,
+  ChatInstructions,
+  ChatPromptDefault,
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { LoadAgentParams, LoadAgentDeps } from '../load';
+import { ChatPromptUnavailableError, createChatPromptService } from '~/prompts/defaults';
 import { STANDARD_MCP_CAPABILITY_PROFILE } from '~/mcp/capabilities';
+import { loadAgent, deferAgentLoad } from '../load';
 import { loadAddedAgent } from '../added';
-import { loadAgent } from '../load';
 
 let Agent: mongoose.Model<unknown>;
 let createAgent: ReturnType<typeof createMethods>['createAgent'];
@@ -80,6 +88,72 @@ describe('loadAgent', () => {
     );
 
     expect(result).toBeNull();
+  });
+
+  test('resolves ordinary chat instructions without passing selection to the model', async () => {
+    const resolveChatInstructions = jest.fn(async () => 'Default system instructions.');
+    const result = await loadAgent(
+      {
+        req: { user: { id: 'user123' }, body: { chatInstructions: { mode: 'inherit' } } },
+        agent_id: String(Constants.EPHEMERAL_AGENT_ID),
+        endpoint: 'openai',
+        model_parameters: {
+          model: 'gpt-4',
+          promptPrefix: '',
+          chatInstructions: { mode: 'inherit' },
+        } as unknown as AgentModelParameters,
+      },
+      { ...deps, resolveChatInstructions },
+    );
+    expect({
+      instructions: result?.instructions,
+      model_parameters: result?.model_parameters,
+    }).toEqual({
+      instructions: 'Default system instructions.',
+      model_parameters: {},
+    });
+    expect(resolveChatInstructions).toHaveBeenCalledWith({
+      user: { id: 'user123' },
+      config: undefined,
+      chatInstructions: { mode: 'inherit' },
+      legacyInstructions: '',
+    });
+  });
+
+  test('preserves a deferred default-prompt failure until initialization awaits it', async () => {
+    const failure = new ChatPromptUnavailableError();
+    const task = deferAgentLoad(
+      {
+        req: { user: { id: 'user123' } },
+        agent_id: String(Constants.EPHEMERAL_AGENT_ID),
+        endpoint: 'openai',
+      },
+      {
+        ...deps,
+        resolveChatInstructions: async () => {
+          throw failure;
+        },
+      },
+    );
+    await expect(task).rejects.toBe(failure);
+  });
+
+  test('never resolves ordinary chat defaults for saved Agents', async () => {
+    const resolveChatInstructions = jest.fn(async () => 'Ordinary chat default.');
+    const getAgent = jest.fn(
+      async () =>
+        ({ id: 'agent_saved', instructions: 'Saved Agent instructions.' }) as LibreChatAgent,
+    );
+    const result = await loadAgent(
+      { req: { user: { id: 'user123' } }, agent_id: 'agent_saved', endpoint: 'agents' },
+      { ...deps, getAgent, resolveChatInstructions },
+    );
+    expect(result).toEqual({
+      id: 'agent_saved',
+      instructions: 'Saved Agent instructions.',
+      version: 0,
+    });
+    expect(resolveChatInstructions).not.toHaveBeenCalled();
   });
 
   test('should test ephemeral agent loading logic', async () => {
@@ -1251,4 +1325,145 @@ describe('loadAgent', () => {
       }
     });
   });
+});
+
+describe.each([false, true])(
+  'added ordinary-chat instructions (shared tools: %s)',
+  (sharedTools) => {
+    const groupId = '123456789012345678901234';
+    const promptId = '123456789012345678901235';
+    const cases: {
+      selection?: ChatInstructions;
+      account?: ChatPromptDefault;
+      legacy?: string;
+      expected: string;
+    }[] = [
+      { expected: 'Deployment default.' },
+      { selection: { mode: 'inherit' }, legacy: 'Legacy.', expected: 'Deployment default.' },
+      { selection: { mode: 'custom', text: 'Added chat custom.' }, expected: 'Added chat custom.' },
+      { selection: { mode: 'none' }, legacy: 'Legacy.', expected: '' },
+      { account: { mode: 'none' }, expected: '' },
+      { legacy: 'Legacy.', expected: 'Legacy.' },
+      {
+        account: { mode: 'prompt', groupId, selection: { type: 'exact', promptId } },
+        expected: 'Account default.',
+      },
+    ];
+
+    it.each(cases)(
+      'resolves the added conversation independently: %j',
+      async ({ selection, account, legacy, expected }) => {
+        const promptService = createChatPromptService({
+          ensureCatalog: async () => new Map([['general', groupId]]),
+          getEffectivePermissions: async () => 1,
+          canUsePrompts: async () => true,
+          promptService: {
+            getPromptGroup: async () => ({
+              ok: true,
+              value: {
+                _id: groupId,
+                name: 'General',
+                author: 'deployment',
+                authorName: 'Deployment',
+                source: 'native',
+              },
+            }),
+            resolvePrompt: async ({ selection: version }) => ({
+              ok: true,
+              value: {
+                source: 'native',
+                groupId,
+                promptId,
+                type: 'text',
+                prompt: version.type === 'exact' ? 'Account default.' : 'Deployment default.',
+              },
+            }),
+          },
+        });
+        const agent = await loadAddedAgent(
+          {
+            req: {
+              user: { id: 'user', personalization: { defaultChatPrompt: account } },
+              config: {
+                config: {},
+                fileStrategy: FileSources.local,
+                imageOutputType: 'png',
+                prompts: { library: [], defaultChatPrompt: 'general' },
+              },
+            },
+            conversation: tConversationSchema.parse({
+              conversationId: 'added-chat',
+              createdAt: '2026-10-28T00:00:00.000Z',
+              updatedAt: '2026-10-28T00:00:00.000Z',
+              endpoint: EModelEndpoint.openAI,
+              model: 'gpt-5',
+              chatInstructions: selection,
+              promptPrefix: legacy,
+            }),
+            primaryAgent: sharedTools
+              ? {
+                  id: String(Constants.EPHEMERAL_AGENT_ID),
+                  name: null,
+                  description: null,
+                  created_at: 0,
+                  avatar: null,
+                  provider: EModelEndpoint.openAI,
+                  model: 'gpt-5',
+                  model_parameters: {
+                    temperature: null,
+                    maxContextTokens: null,
+                    max_context_tokens: null,
+                    max_output_tokens: null,
+                    top_p: null,
+                    frequency_penalty: null,
+                    presence_penalty: null,
+                  },
+                  instructions: 'Primary custom.',
+                  tools: [],
+                }
+              : undefined,
+          },
+          {
+            getAgent: async () => null,
+            getMCPServerTools: async () => null,
+            resolveChatInstructions: promptService.resolveInstructions,
+          },
+        );
+        expect(agent?.instructions).toBe(expected);
+      },
+    );
+  },
+);
+
+it('keeps an added saved Agent independent of ordinary-chat defaults', async () => {
+  const resolveChatInstructions = jest.fn(async () => 'Ordinary default.');
+  const agent = await loadAddedAgent(
+    {
+      req: { user: { id: 'user' } },
+      conversation: tConversationSchema.parse({
+        conversationId: 'added-chat',
+        createdAt: '2026-10-28T00:00:00.000Z',
+        updatedAt: '2026-10-28T00:00:00.000Z',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent_saved',
+        chatInstructions: { mode: 'none' },
+      }),
+    },
+    {
+      getAgent: async () =>
+        ({
+          id: 'agent_saved',
+          instructions: 'Saved Agent instructions.',
+          version: 2,
+        }) as LibreChatAgent,
+      getMCPServerTools: async () => null,
+      resolveChatInstructions,
+    },
+  );
+  expect(agent).toStrictEqual({
+    id: 'agent_saved____1',
+    instructions: 'Saved Agent instructions.',
+    version: 2,
+  });
+  expect(resolveChatInstructions).not.toHaveBeenCalled();
 });

@@ -9,9 +9,16 @@ import {
   encodeEphemeralAgentId,
   resolveMCPAppsPolicy,
 } from 'librechat-data-provider';
-import type { Agent, AgentToolOptions, TConversation, TModelSpec } from 'librechat-data-provider';
+import type {
+  Agent,
+  AgentToolOptions,
+  TConversation,
+  TModelSpec,
+  ChatPromptDefault,
+} from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { MCPClientCapabilityProfile } from '~/mcp/capabilities';
+import type { ChatPromptService } from '~/prompts/defaults';
 import type { ParsedServerConfig } from '~/mcp/types';
 import {
   requiresEphemeralUserConnection,
@@ -58,6 +65,7 @@ function applyModelSpecSubagents(
 }
 
 export interface LoadAddedAgentDeps {
+  resolveChatInstructions?: ChatPromptService['resolveInstructions'];
   /** Resolves the agent without its `versions` history; `version` carries the count. */
   getAgent: (searchParameter: {
     id: string;
@@ -78,7 +86,14 @@ export interface LoadAddedAgentDeps {
 }
 
 interface LoadAddedAgentParams {
-  req: { user?: { id?: string; role?: string }; config?: Record<string, unknown> };
+  req: {
+    user?: {
+      id?: string;
+      role?: string;
+      personalization?: { defaultChatPrompt?: ChatPromptDefault };
+    };
+    config?: Record<string, unknown>;
+  };
   conversation: TConversation | null;
   primaryAgent?: Agent | null;
 }
@@ -112,20 +127,21 @@ export async function loadAddedAgent(
     return agent;
   }
 
-  const { model, endpoint, promptPrefix, spec, ...rest } = conversation as TConversation & {
-    promptPrefix?: string;
-    spec?: string;
-    modelLabel?: string;
-    ephemeralAgent?: {
-      mcp?: string[];
-      execute_code?: boolean;
-      file_search?: boolean;
-      web_search?: boolean;
-      artifacts?: unknown;
-      memory?: boolean;
+  const { model, endpoint, promptPrefix, chatInstructions, spec, ...rest } =
+    conversation as TConversation & {
+      promptPrefix?: string;
+      spec?: string;
+      modelLabel?: string;
+      ephemeralAgent?: {
+        mcp?: string[];
+        execute_code?: boolean;
+        file_search?: boolean;
+        web_search?: boolean;
+        artifacts?: unknown;
+        memory?: boolean;
+      };
+      [key: string]: unknown;
     };
-    [key: string]: unknown;
-  };
 
   if (!endpoint || !model) {
     logger.warn('[loadAddedAgent] Missing required endpoint or model for ephemeral agent');
@@ -133,6 +149,14 @@ export async function loadAddedAgent(
   }
 
   const appConfig = req.config as AppConfig | undefined;
+  const instructions = deps.resolveChatInstructions
+    ? await deps.resolveChatInstructions({
+        user: { ...req.user, id: req.user?.id ?? '' },
+        config: appConfig,
+        chatInstructions,
+        legacyInstructions: promptPrefix,
+      })
+    : promptPrefix || '';
   const capabilityProfile = resolveMCPClientCapabilityProfile(
     resolveMCPAppsPolicy(appConfig?.mcpSettings?.apps),
   );
@@ -176,7 +200,7 @@ export async function loadAddedAgent(
 
     const result: Record<string, unknown> = {
       id: ephemeralId,
-      instructions: promptPrefix || '',
+      instructions,
       provider: endpoint,
       model_parameters: {},
       model,
@@ -306,7 +330,7 @@ export async function loadAddedAgent(
 
   const result: Record<string, unknown> = {
     id: ephemeralId,
-    instructions: promptPrefix || '',
+    instructions,
     provider: endpoint,
     model_parameters,
     model,

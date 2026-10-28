@@ -1,4 +1,5 @@
 import { Schema, Document } from 'mongoose';
+import type { ChatInstructions } from 'librechat-data-provider';
 import { conversationPreset } from './defaults';
 
 // @ts-ignore
@@ -17,6 +18,7 @@ export interface IPreset extends Document {
   examples?: unknown[];
   modelLabel?: string;
   promptPrefix?: string;
+  chatInstructions?: ChatInstructions;
   temperature?: number;
   top_p?: number;
   topP?: number;

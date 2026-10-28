@@ -31,6 +31,7 @@ import {
   buildPromptGroupFilter,
   filterAccessibleIdsBySharedLogic,
 } from './format';
+import { createConfigPromptAdapter, createConfigPromptCatalogReader } from './config';
 import { safeValidatePromptGroupUpdate, safeValidatePromptPayload } from './schemas';
 import { createNativePromptAdapter, selectionUnavailableReason } from './native';
 import { createLangfuseSourceResolver } from '../langfuse/promptSync';
@@ -155,7 +156,8 @@ function inspect(
 
 /** Builds the prompt service from a store, source adapters and permission grants. */
 export function createPromptServiceFromAdapters(adapters: PromptServiceAdapters): PromptService {
-  const { store, sources, grantCreatorOwnership, grantPublicViewer, logger } = adapters;
+  const { store, sources, readConfigCatalog, grantCreatorOwnership, grantPublicViewer, logger } =
+    adapters;
 
   const readPrompt = (promptId: string, loaded?: PromptRecord | null) =>
     loaded?._id === promptId
@@ -166,6 +168,13 @@ export function createPromptServiceFromAdapters(adapters: PromptServiceAdapters)
     loaded?._id === groupId
       ? Promise.resolve(loaded)
       : withPromptStage('read', () => store.getPromptGroup(groupId));
+
+  const projectConfigGroup = async (group: PromptGroupRecord | null) => {
+    if (group?.source !== 'config' || readConfigCatalog === undefined) {
+      return group;
+    }
+    return (await readConfigCatalog()).projectGroup(group);
+  };
 
   return {
     async resolvePrompt({
@@ -187,6 +196,9 @@ export function createPromptServiceFromAdapters(adapters: PromptServiceAdapters)
         return { ok: false, error: { type: 'unsupported_source', source: group.source } };
       }
       const adapter = sources[group.source];
+      if (adapter == null) {
+        return { ok: false, error: { type: 'unsupported_source', source: group.source } };
+      }
       const resolved = await adapter.resolvePrompt({ group, selection, loadedRevision });
       if (!resolved.ok) {
         return resolved;
@@ -196,6 +208,7 @@ export function createPromptServiceFromAdapters(adapters: PromptServiceAdapters)
 
     async getListPromptGroupsByAccess(input) {
       const { name, category, searchShared, searchSharedOnly } = buildPromptGroupFilter(input);
+      const catalog = await readConfigCatalog?.();
       const accessibleIds = await filterAccessibleIdsBySharedLogic({
         accessibleIds: input.accessibleIds,
         searchShared,
@@ -205,12 +218,22 @@ export function createPromptServiceFromAdapters(adapters: PromptServiceAdapters)
       });
       const result = await store.getListPromptGroupsByAccess({
         accessibleIds,
+        ...(catalog === undefined
+          ? {}
+          : { activeConfigGroupIds: catalog.matchingGroupIds({ name, category }) }),
         name,
         category,
         limit: input.limit,
         after: input.after,
       });
-      const projected = projectStoredPromptGroups(result.data, input.filters, {
+      const groups =
+        catalog === undefined
+          ? result.data
+          : result.data.flatMap((group) => {
+              const projected = catalog.projectGroup(group);
+              return projected === null ? [] : [projected];
+            });
+      const projected = projectStoredPromptGroups(groups, input.filters, {
         forReuse: input.forReuse,
       });
       return {
@@ -223,7 +246,13 @@ export function createPromptServiceFromAdapters(adapters: PromptServiceAdapters)
     async getPrompts({ groupId, filters }) {
       // Keyed by groupId against the native `Prompt` collection: a Langfuse group has no
       // rows there, so this already resolves to `[]` for one without a source check.
-      const prompts = await withPromptStage('read', () => store.getPrompts(groupId));
+      const [prompts, group] = await Promise.all([
+        withPromptStage('read', () => store.getPrompts(groupId)),
+        readConfigCatalog === undefined ? undefined : readGroup(groupId),
+      ]);
+      if (group?.source === 'config' && (await projectConfigGroup(group)) === null) {
+        return [];
+      }
       return projectStoredPrompts(prompts, filters);
     },
 
@@ -296,7 +325,7 @@ export function createPromptServiceFromAdapters(adapters: PromptServiceAdapters)
     },
 
     async getPromptGroup({ groupId, loadedGroup, filters }) {
-      const group = await readGroup(groupId, loadedGroup);
+      const group = await projectConfigGroup(await readGroup(groupId, loadedGroup));
       if (group == null) {
         return null;
       }
@@ -312,6 +341,12 @@ export function createPromptServiceFromAdapters(adapters: PromptServiceAdapters)
       const revision = await readPrompt(promptId, loadedRevision);
       if (revision == null) {
         return null;
+      }
+      if (readConfigCatalog !== undefined) {
+        const group = await readGroup(revision.groupId);
+        if (group?.source === 'config' && (await projectConfigGroup(group)) === null) {
+          return null;
+        }
       }
       return inspect({ prompt: revision }, filters) ?? { ok: true, value: revision };
     },
@@ -474,10 +509,13 @@ export function createPromptService({
   getAppConfig,
 }: PromptServiceDependencies): PromptService {
   const store = createPromptStore(db);
+  const readConfigCatalog = createConfigPromptCatalogReader(getAppConfig);
   return createPromptServiceFromAdapters({
     store,
+    readConfigCatalog,
     sources: {
       native: createNativePromptAdapter(store),
+      config: createConfigPromptAdapter(store, readConfigCatalog),
       langfuse: createLangfusePromptAdapter({
         resolveSource: createLangfuseSourceResolver({
           findBaseConfig: () =>

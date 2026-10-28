@@ -39,6 +39,7 @@ import {
   scheduledMCPResourceBindingSchema,
   scheduledMCPReadOnlyPolicySchema,
 } from './types/scheduleConsent';
+import { promptLibrarySchema } from './prompts';
 import { partialWithoutDefaults } from './zod';
 
 export const AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_DEFAULT = 24 * 1024;
@@ -117,7 +118,12 @@ export const DEFAULT_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 /** Sections only librechat.yaml sets: no config document, Base included, can change or remove
  * them. `turnstile` stays here until the server verifies Turnstile tokens: until then a stored
  * site key adds no protection, and a wrong one locks users out of sign-in and registration. */
-export const BASE_ONLY_CONFIG_SECTIONS = ['filters', 'mcpAppSandbox', 'turnstile'] as const;
+export const BASE_ONLY_CONFIG_SECTIONS = [
+  'filters',
+  'mcpAppSandbox',
+  'turnstile',
+  'prompts',
+] as const;
 /** Sections that may be stored in the tenant's base config document but must
  * not be overridden or tombstoned by role, group, or user config documents. */
 export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
@@ -246,6 +252,7 @@ export const excludedKeys = new Set([
   'spec',
   'disableParams',
   'chatProjectId',
+  'chatInstructions',
   'lastResponseAt',
   'lastResponseMessageId',
   'lastResponseIsManual',
@@ -4405,6 +4412,7 @@ export const configSchema = z.object({
     .strict()
     .optional(),
   langfuse: langfuseConfigSchema.optional(),
+  prompts: promptLibrarySchema.optional(),
   credentials: credentialsConfigSchema.optional(),
   memory: memorySchema.optional(),
   summarization: summarizationConfigSchema.optional(),
@@ -5330,6 +5338,7 @@ export enum ErrorTypes {
    * Agent selected a stateful Code API workspace scope disabled by the deployment.
    */
   STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED = 'stateful_code_environment_not_allowed',
+  CHAT_PROMPT_UNAVAILABLE = 'chat_prompt_unavailable',
   /**
    * A conversation's selected attached workspace cannot be used as requested.
    */

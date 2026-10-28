@@ -1,4 +1,5 @@
 import {
+  promptLibrarySchema,
   AgentCapabilities,
   EModelEndpoint,
   chatProjectsConfigSchema,
@@ -284,6 +285,7 @@ export const AppService = async (params?: {
 
   const appConfig: AppConfig = {
     ...defaultConfig,
+    prompts: config?.prompts == null ? undefined : promptLibrarySchema.parse(config.prompts),
     fileConfig: config?.fileConfig as AppConfig['fileConfig'],
     modelSpecs: processModelSpecs(config?.endpoints, config.modelSpecs, interfaceConfig),
     endpoints: loadedEndpoints,

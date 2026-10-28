@@ -37,6 +37,7 @@ import NoPromptGroup from '../lists/NoPromptGroup';
 import PromptEditor from '../editor/PromptEditor';
 import SkeletonForm from '../utils/SkeletonForm';
 import SharePrompt from '../dialogs/SharePrompt';
+import DefaultActions from '../defaults/Actions';
 import Description from '../fields/Description';
 import PromptName from '../fields/PromptName';
 import { PromptsEditorMode } from '~/common';
@@ -239,9 +240,11 @@ const ExternalPromptGroupView = React.memo(
             >
               <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
               <span>
-                {localize('com_ui_prompt_langfuse_read_only', {
-                  0: group.sourcePromptName ?? '',
-                })}
+                {group.source === 'config'
+                  ? localize('com_ui_prompt_config_read_only')
+                  : localize('com_ui_prompt_langfuse_read_only', {
+                      0: group.sourcePromptName ?? '',
+                    })}
               </span>
             </div>
             <Description initialValue={group.oneliner ?? ''} disabled />
@@ -259,6 +262,12 @@ const ExternalPromptGroupView = React.memo(
             {!isLoading && !hasError && <PromptVariables promptText={mainText} />}
 
             {resolved?.source === 'langfuse' && <LangfusePromptMeta resolved={resolved} />}
+            <DefaultActions
+              key={group._id}
+              group={group}
+              promptText={text}
+              disabled={isLoading || hasError}
+            />
           </div>
         </div>
       </div>
@@ -653,6 +662,13 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
                       name="prompt"
                       isEditing={isEditing}
                       setIsEditing={(value) => canEdit && setIsEditing(value)}
+                    />
+                    <DefaultActions
+                      key={`${group._id}-${selectedPromptId}`}
+                      group={group}
+                      promptText={selectedPrompt?.prompt ?? ''}
+                      promptId={selectedPromptId}
+                      disabled={isEditing || selectedPrompt?.type === 'chat'}
                     />
                     <PromptVariables promptText={promptText} inset />
                     <Description

@@ -252,6 +252,16 @@ describe('extractChatContent', () => {
 
   it.each([
     ['the primary preset', { promptPrefix: 'sk-pre-policy-primary' }],
+    [
+      'custom chat instructions',
+      { chatInstructions: { mode: 'custom' as const, text: 'sk-pre-policy-primary' } },
+    ],
+    [
+      'custom added-chat instructions',
+      {
+        addedConvo: { chatInstructions: { mode: 'custom' as const, text: 'sk-pre-policy-added' } },
+      },
+    ],
     ['an added-conversation preset', { addedConvo: { promptPrefix: 'sk-pre-policy-added' } }],
   ])('retains the prompt source when replaying %s after policy tightening', (_name, body) => {
     const finding = inspectContent(extractChatContent(body), {

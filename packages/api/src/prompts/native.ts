@@ -78,11 +78,12 @@ export function selectionUnavailableReason(selection: PromptSelection): 'product
  *  store's `getPrompt`. */
 export function createNativePromptAdapter(
   store: Pick<PromptStore, 'getPrompt'>,
+  source: 'native' | 'config' = 'native',
 ): PromptSourceAdapter {
   return {
     resolvePrompt: async ({ group, selection, loadedRevision }) => {
       if (selection.type === 'version') {
-        return { ok: false, error: { type: 'unsupported_selection', source: 'native' } };
+        return { ok: false, error: { type: 'unsupported_selection', source } };
       }
       const resolved =
         selection.type === 'exact'
@@ -94,7 +95,7 @@ export function createNativePromptAdapter(
           error: { type: 'unavailable_selection', reason: selectionUnavailableReason(selection) },
         };
       }
-      return { ok: true, value: { source: 'native', ...resolved } };
+      return { ok: true, value: { source, ...resolved } };
     },
   };
 }

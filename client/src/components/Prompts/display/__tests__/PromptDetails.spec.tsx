@@ -1,3 +1,4 @@
+jest.mock('../../defaults/Actions', () => ({ __esModule: true, default: () => null }));
 import React from 'react';
 import '@testing-library/jest-dom/extend-expect';
 import { dataService, SystemRoles } from 'librechat-data-provider';

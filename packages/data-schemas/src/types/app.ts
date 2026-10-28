@@ -1,4 +1,5 @@
 import type {
+  PromptLibraryConfig,
   TEndpoint,
   FileStorage,
   TFileConfig,
@@ -136,6 +137,7 @@ export interface AppConfig {
   toolCallPreviews?: TToolCallPreviewsConfig;
   /** Processed model specifications */
   modelSpecs?: TCustomConfig['modelSpecs'];
+  prompts?: PromptLibraryConfig;
   /** Available tools */
   availableTools?: Record<string, FunctionTool>;
   endpoints?: {

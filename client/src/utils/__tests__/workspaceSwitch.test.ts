@@ -66,3 +66,42 @@ it('keeps a new-chat selection new', () => {
     } as TConversation).conversationId,
   ).toBe('new');
 });
+
+it.each([
+  { mode: 'inherit' as const },
+  { mode: 'none' as const },
+  { mode: 'custom' as const, text: 'Use examples.' },
+])('keeps chat instructions when the native picker switches provider: %j', (chatInstructions) => {
+  const conversation = {
+    conversationId: 'saved-chat',
+    endpoint: EModelEndpoint.openAI,
+    model: 'gpt-5',
+    chatInstructions,
+  } as TConversation;
+  const { template } = getConvoSwitchLogic({
+    conversation,
+    newEndpoint: EModelEndpoint.anthropic,
+    endpointsConfig: {
+      openAI: { order: 0 },
+      anthropic: { order: 1 },
+    },
+    modularChat: true,
+  });
+  const next = buildDefaultConvo({
+    conversation,
+    endpoint: EModelEndpoint.anthropic,
+    lastConversationSetup: { ...template, model: 'claude-opus-5' } as TConversation,
+    models: ['claude-opus-5'],
+  });
+  expect({
+    conversationId: next.conversationId,
+    endpoint: next.endpoint,
+    model: next.model,
+    chatInstructions: next.chatInstructions,
+  }).toStrictEqual({
+    conversationId: 'saved-chat',
+    endpoint: EModelEndpoint.anthropic,
+    model: 'claude-opus-5',
+    chatInstructions,
+  });
+});

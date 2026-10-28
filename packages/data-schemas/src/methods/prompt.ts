@@ -18,6 +18,7 @@ import type {
 } from '~/types';
 import { getTenantId, scopedCacheKey, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { isValidObjectIdString } from '~/utils/objectId';
+import { getConfigPromptIds } from '~/utils/prompts';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
 
@@ -105,6 +106,8 @@ async function readAccessGeneration(cache: CacheStore): Promise<string | undefin
  */
 export interface PromptGroupListParams {
   accessibleIds?: Array<string | Types.ObjectId>;
+  /** Config groups that match the current deployment's metadata filters. */
+  activeConfigGroupIds?: readonly string[];
   name?: string;
   category?: string;
   limit?: number | string | null;
@@ -165,6 +168,14 @@ export interface PromptMethods {
   ): Promise<IPromptGroup>;
   makePromptProduction(promptId: string): Promise<{ message: string }>;
   updatePromptLabels(_id: string, labels: unknown): Promise<{ message: string }>;
+  syncConfigPrompts(
+    entries: readonly {
+      id: string;
+      name: string;
+      description?: string;
+      prompt: string;
+    }[],
+  ): Promise<{ id: string; groupId: string }[]>;
   findLangfusePromptGroup(identity: {
     sourceDestination: string;
     sourceProjectId: string;
@@ -382,6 +393,7 @@ export function createPromptMethods(
    */
   async function getListPromptGroupsByAccess({
     accessibleIds = [],
+    activeConfigGroupIds,
     name,
     category,
     limit = null,
@@ -403,11 +415,17 @@ export function createPromptMethods(
     const baseQuery: Record<string, unknown> = {
       _id: { $in: accessibleIds },
     };
-    if (name) {
-      baseQuery.name = new RegExp(escapeRegExp(name), 'i');
-    }
-    if (category != null) {
-      baseQuery.category = category;
+    const metadataQuery: Record<string, unknown> = {
+      ...(name ? { name: new RegExp(escapeRegExp(name), 'i') } : {}),
+      ...(category != null ? { category } : {}),
+    };
+    if (activeConfigGroupIds === undefined) {
+      Object.assign(baseQuery, metadataQuery);
+    } else {
+      baseQuery.$or = [
+        { source: { $ne: 'config' }, ...metadataQuery },
+        { source: 'config', _id: { $in: activeConfigGroupIds } },
+      ];
     }
 
     let matchQuery: Record<string, unknown> = baseQuery;
@@ -589,6 +607,63 @@ export function createPromptMethods(
       logger.error('Error saving prompt group', error);
       throw new Error('Error saving prompt group');
     }
+  }
+
+  async function syncConfigPrompts(
+    entries: readonly {
+      id: string;
+      name: string;
+      description?: string;
+      prompt: string;
+    }[],
+  ): Promise<{ id: string; groupId: string }[]> {
+    const PromptGroup = mongoose.models.PromptGroup as Model<IPromptGroupDocument>;
+    const Prompt = mongoose.models.Prompt as Model<IPrompt>;
+    const tenant = getTenantId() ?? '';
+    if (tenant === SYSTEM_TENANT_ID) {
+      throw new Error('Configuration prompt synchronization requires a tenant scope.');
+    }
+    const author = '000000000000000000000000';
+    const groups = await Promise.all(
+      entries.map(async (entry) => {
+        const { groupId, promptId } = getConfigPromptIds(entry);
+        const timestamp = new Date();
+        await Prompt.updateOne(
+          { _id: promptId, groupId },
+          {
+            $setOnInsert: {
+              groupId,
+              author,
+              prompt: entry.prompt,
+              type: 'text',
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          },
+          { upsert: true, runValidators: true, timestamps: false },
+        );
+        await PromptGroup.updateOne(
+          { _id: groupId, source: 'config' },
+          {
+            $setOnInsert: {
+              name: entry.name,
+              oneliner: entry.description ?? '',
+              productionId: promptId,
+              source: 'config',
+              author,
+              authorName: 'Deployment',
+              category: '',
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          },
+          { upsert: true, runValidators: true, timestamps: false },
+        );
+        return { id: entry.id, groupId };
+      }),
+    );
+    await invalidatePromptGroupAccessContext();
+    return groups;
   }
 
   /**
@@ -1152,6 +1227,7 @@ export function createPromptMethods(
     getListPromptGroupsByAccess,
     incrementPromptGroupUsage,
     createPromptGroup,
+    syncConfigPrompts,
     findLangfusePromptGroup,
     createLangfusePromptGroup,
     savePrompt,

@@ -14,11 +14,13 @@ const { getMCPServerTools } = require('~/server/services/Config');
 const { getAccessibleMcpServerNames, getAccessibleMCPServers } = require('~/server/services/MCP');
 const { isFatalAgentInitializationError } = require('~/server/services/ToolService');
 const { getSkillDbMethods, canAuthorSkillFiles } = require('./skillDeps');
+const { chatPromptService } = require('~/server/services/Prompts');
 const db = require('~/models');
 
 const loadAddedAgent = (params) =>
   loadAddedAgentFn(params, {
     getAgent: db.getAgentWithVersionCount,
+    resolveChatInstructions: chatPromptService.resolveInstructions,
     getMCPServerTools,
     getAccessibleMCPServers,
   });

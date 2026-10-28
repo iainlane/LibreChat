@@ -45,6 +45,14 @@ export const conversationPreset: {
     type: StringConstructor;
     required: boolean;
   };
+  chatInstructions: {
+    type: {
+      mode: { type: StringConstructor; enum: string[]; required: boolean };
+      text: { type: StringConstructor };
+    };
+    _id: boolean;
+    default: undefined;
+  };
   temperature: {
     type: NumberConstructor;
     required: boolean;
@@ -250,6 +258,14 @@ export const conversationPreset: {
   promptPrefix: {
     type: String,
     required: false,
+  },
+  chatInstructions: {
+    type: {
+      mode: { type: String, enum: ['inherit', 'none', 'custom'], required: true },
+      text: { type: String },
+    },
+    _id: false,
+    default: undefined,
   },
   temperature: {
     type: Number,

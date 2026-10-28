@@ -1340,3 +1340,61 @@ describe('deleteUserPrompts and synced groups', () => {
      */
   });
 });
+
+describe('configuration prompt catalog', () => {
+  const entry = { id: 'general', name: 'General assistant', prompt: 'Be helpful.' };
+
+  it('retains stable groups and immutable revisions across configuration changes', async () => {
+    await tenantStorage.run({ tenantId: 'configured-prompts' }, async () => {
+      const original = await methods.syncConfigPrompts([entry]);
+      const originalGroup = await methods.getPromptGroup({ _id: original[0].groupId });
+      const originalRevisions = await methods.getPrompts({ groupId: original[0].groupId });
+      const updated = await methods.syncConfigPrompts([
+        { ...entry, prompt: 'Be helpful and clear.' },
+      ]);
+      expect(updated).toEqual(original);
+      const revisions = await methods.getPrompts({ groupId: original[0].groupId });
+      expect(revisions.map(({ prompt }) => prompt).sort()).toEqual([
+        'Be helpful and clear.',
+        'Be helpful.',
+      ]);
+      const currentGroup = await methods.getPromptGroup({ _id: original[0].groupId });
+      expect(currentGroup).toEqual(originalGroup);
+      expect(revisions.filter(({ prompt }) => prompt === entry.prompt)).toEqual(originalRevisions);
+    });
+  });
+
+  it('isolates tenant IDs and preserves managed records when a replica omits them', async () => {
+    const first = await tenantStorage.run({ tenantId: 'configured-a' }, () =>
+      methods.syncConfigPrompts([entry]),
+    );
+    const second = await tenantStorage.run({ tenantId: 'configured-b' }, () =>
+      methods.syncConfigPrompts([entry]),
+    );
+    expect(first).not.toEqual(second);
+    const native = await tenantStorage.run({ tenantId: 'configured-a' }, () =>
+      methods.createPromptGroup({
+        prompt: { prompt: 'Native text', type: 'text' },
+        group: { name: 'User prompt' },
+        author: String(testUsers.owner._id),
+        authorName: 'Owner',
+      }),
+    );
+    await tenantStorage.run({ tenantId: 'configured-a' }, () => methods.syncConfigPrompts([]));
+    await tenantStorage.run({ tenantId: 'configured-a' }, async () => {
+      await expect(
+        methods.getPromptGroup({ _id: String(native.group._id) }),
+      ).resolves.toMatchObject({ name: 'User prompt', source: 'native' });
+      await expect(methods.getPromptGroup({ _id: first[0].groupId })).resolves.toMatchObject({
+        name: entry.name,
+        source: 'config',
+      });
+      expect(
+        (await methods.getPrompts({ groupId: first[0].groupId })).map(({ prompt }) => prompt),
+      ).toEqual([entry.prompt]);
+    });
+    await tenantStorage.run({ tenantId: 'configured-b' }, async () => {
+      expect(await methods.getPromptGroup({ _id: second[0].groupId })).not.toBeNull();
+    });
+  });
+});

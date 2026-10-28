@@ -1,17 +1,19 @@
 const mockDb = { marker: 'db' };
 const mockGrantPermission = jest.fn();
 const mockGetAppConfig = jest.fn();
-const mockPromptServiceInstance = { marker: 'promptService' };
-const mockCreatePromptService = jest.fn(() => mockPromptServiceInstance);
+const mockPromptServiceInstance = { promptService: { marker: 'promptService' } };
+const mockGetEffectivePermissions = jest.fn();
+const mockCreatePromptServices = jest.fn(() => mockPromptServiceInstance);
 
 jest.mock('@librechat/api', () => ({
-  createPromptService: mockCreatePromptService,
+  createPromptServices: mockCreatePromptServices,
 }));
 
 jest.mock('~/models', () => mockDb);
 
 jest.mock('~/server/services/PermissionService', () => ({
   grantPermission: mockGrantPermission,
+  getEffectivePermissions: mockGetEffectivePermissions,
 }));
 
 jest.mock('~/server/services/Config', () => ({
@@ -22,12 +24,13 @@ describe('Prompts', () => {
   it('builds the process prompt service once with the shared db, grantPermission and getAppConfig', () => {
     const { promptService } = require('./Prompts');
 
-    expect(mockCreatePromptService).toHaveBeenCalledTimes(1);
-    expect(mockCreatePromptService).toHaveBeenCalledWith({
+    expect(mockCreatePromptServices).toHaveBeenCalledTimes(1);
+    expect(mockCreatePromptServices).toHaveBeenCalledWith({
       db: mockDb,
       grantPermission: mockGrantPermission,
+      getEffectivePermissions: mockGetEffectivePermissions,
       getAppConfig: mockGetAppConfig,
     });
-    expect(promptService).toBe(mockPromptServiceInstance);
+    expect(promptService).toBe(mockPromptServiceInstance.promptService);
   });
 });

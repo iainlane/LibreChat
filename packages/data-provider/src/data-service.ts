@@ -9,6 +9,7 @@ import type {
 import type { TInsightsAccessResponse, TInsightsParams, TInsightsResponse } from './types/insights';
 import type { ScheduleMCPConsentView, ConfirmScheduleMCPConsent } from './types/scheduleConsent';
 import type { CodeSetupAttempt, CodeSetupApprovalRequest } from './codeSetup';
+import type { ChatPromptDefault, ChatPromptPreferences } from './prompts';
 import type { TFileConfig } from './file-config';
 import type * as tl from './types/tools';
 import type * as t from './types';
@@ -1320,6 +1321,16 @@ export function connectPullRequestAccount(): Promise<t.TPullRequestConnectStart>
 
 export function disconnectPullRequestAccount(): Promise<void> {
   return request.delete(endpoints.pullRequestDisconnect());
+}
+
+export function getChatPromptPreferences(): Promise<ChatPromptPreferences> {
+  return request.get(endpoints.chatPromptPreferences());
+}
+
+export function updateChatPromptPreferences(
+  selection: ChatPromptDefault,
+): Promise<ChatPromptPreferences> {
+  return request.put(endpoints.chatPromptPreferences(), selection);
 }
 
 export function getPrompt(id: string): Promise<{ prompt: t.TPrompt }> {

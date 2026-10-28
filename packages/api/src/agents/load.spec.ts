@@ -1,5 +1,8 @@
-import { EModelEndpoint, parseEphemeralAgentId } from 'librechat-data-provider';
+import { EModelEndpoint, parseCompactConvo, parseEphemeralAgentId } from 'librechat-data-provider';
+import type { AgentModelParameters, ChatInstructions, TModelSpec } from 'librechat-data-provider';
 import type { LoadAgentDeps } from './load';
+import { createChatPromptService } from '~/prompts/defaults';
+import { applyModelSpecPreset } from '~/modelSpecs';
 import { loadEphemeralAgent } from './load';
 import { resolveSender } from './sender';
 
@@ -99,4 +102,83 @@ describe('loadEphemeralAgent → resolveSender parity', () => {
     expect(sender).toBe('My Opus');
     expect(sender).toBe(parseEphemeralAgentId(agent?.id ?? '')?.sender);
   });
+});
+
+describe.each([false, true])('ordinary-chat instruction policy (enforced: %s)', (enforced) => {
+  const modelSpec: TModelSpec = {
+    name: 'guarded-chat',
+    label: 'Guarded chat',
+    preset: {
+      endpoint: EModelEndpoint.openAI,
+      model: 'gpt-4o',
+      promptPrefix: 'Administrator instructions.',
+    },
+  };
+  const selections: { selection: ChatInstructions; expected: string }[] = [
+    { selection: { mode: 'custom', text: 'User replacement.' }, expected: 'User replacement.' },
+    { selection: { mode: 'none' }, expected: '' },
+    { selection: { mode: 'inherit' }, expected: '' },
+  ];
+
+  it.each(selections)(
+    'applies the validated selection: $selection.mode',
+    async ({ selection, expected }) => {
+      const body = {
+        endpoint: EModelEndpoint.openAI,
+        model: 'gpt-4o',
+        spec: modelSpec.name,
+        chatInstructions: selection,
+      };
+      const parsedRequest = parseCompactConvo({
+        endpoint: body.endpoint,
+        conversation: body,
+      });
+      expect(parsedRequest).not.toBeNull();
+      const { parsedBody } = applyModelSpecPreset({
+        modelSpec,
+        endpoint: body.endpoint,
+        parsedBody: parsedRequest ?? {},
+        includePresetDefaults: enforced,
+      });
+      const {
+        spec,
+        iconURL: _iconURL,
+        agent_id: _agentId,
+        chatProjectId: _chatProjectId,
+        ...modelParameters
+      } = parsedBody;
+      const promptService = createChatPromptService({
+        ensureCatalog: async () => new Map(),
+        canUsePrompts: async () => true,
+        getEffectivePermissions: async () => {
+          throw new Error('No default prompt should be resolved.');
+        },
+        promptService: {
+          getPromptGroup: async () => {
+            throw new Error('No default prompt should be resolved.');
+          },
+          resolvePrompt: async () => {
+            throw new Error('No default prompt should be resolved.');
+          },
+        },
+      });
+      const agent = await loadEphemeralAgent(
+        {
+          req: { user: { id: 'user-1' }, body },
+          spec: typeof spec === 'string' ? spec : undefined,
+          endpoint: body.endpoint,
+          model_parameters: modelParameters as AgentModelParameters,
+        },
+        { ...deps, resolveChatInstructions: promptService.resolveInstructions },
+      );
+
+      expect({
+        instructions: agent?.instructions,
+        hasInstructionSelection: 'chatInstructions' in (agent?.model_parameters ?? {}),
+      }).toStrictEqual({
+        instructions: enforced ? modelSpec.preset.promptPrefix : expected,
+        hasInstructionSelection: false,
+      });
+    },
+  );
 });

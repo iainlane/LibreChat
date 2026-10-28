@@ -26,6 +26,7 @@ import type { StatefulCodeEnvironment } from './stateful-code';
 import type { CodeApprovalMode } from './code/approval';
 import type { EToolResources } from './types/tools';
 import type { SettingDefinition } from './generate';
+import type { ChatPromptDefault } from './prompts';
 import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
 import type { ProviderId } from './providers';
@@ -48,6 +49,7 @@ export type TEndpointOption = Pick<
   | 'modelLabel'
   | 'chatGptLabel'
   | 'promptPrefix'
+  | 'chatInstructions'
   | 'temperature'
   | 'topP'
   | 'topK'
@@ -329,6 +331,7 @@ export type TUser = {
   backupCodes?: TBackupCode[];
   personalization?: {
     memories?: boolean;
+    defaultChatPrompt?: ChatPromptDefault;
     statefulCodeEnvironment?: StatefulCodeEnvironment;
   };
   createdAt: string;
@@ -1121,6 +1124,7 @@ export type TPrompt = {
 export const PromptGroupSources = {
   native: 'native',
   langfuse: 'langfuse',
+  config: 'config',
 } as const;
 
 export type TPromptGroupSource = (typeof PromptGroupSources)[keyof typeof PromptGroupSources];
@@ -1271,7 +1275,12 @@ export type TResolvedLangfusePrompt = {
   sourceUrl?: string;
 };
 
-export type TResolvedPromptResponse = TResolvedNativePrompt | TResolvedLangfusePrompt;
+export type TResolvedConfigPrompt = Omit<TResolvedNativePrompt, 'source'> & { source: 'config' };
+
+export type TResolvedPromptResponse =
+  | TResolvedNativePrompt
+  | TResolvedConfigPrompt
+  | TResolvedLangfusePrompt;
 
 /** `code` values the `/resolve` route returns, including the Langfuse request
  *  failure codes relayed through `toLangfusePromptErrorResponse` (`unauthorized`,
