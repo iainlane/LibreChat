@@ -93,7 +93,7 @@ it('does not advertise unsupported Langfuse chat defaults', () => {
   expect(screen.queryByRole('button', { name: 'com_ui_chat_default_set' })).not.toBeInTheDocument();
 });
 
-it.each(['topic', 'current_user', 'current_date', 'iso_datetime', 'current_datetime'])(
+it.each(['topic', 'tone:formal|casual', 'constructor', 'current_model:one|two'])(
   'explains why a prompt with the %s variable cannot become a chat default',
   (variable) => {
     setup(false, `Hello {{${variable}}}.`);
@@ -103,11 +103,14 @@ it.each(['topic', 'current_user', 'current_date', 'iso_datetime', 'current_datet
   },
 );
 
-it.each(['Be helpful.', 'Use {braces} in JSON examples.'])(
-  'allows plain text without a variables warning: %s',
-  (promptText) => {
-    setup(false, promptText);
-    expect(screen.getByRole('button', { name: 'com_ui_chat_default_set' })).toBeEnabled();
-    expect(screen.queryByText('com_ui_chat_default_variables')).not.toBeInTheDocument();
-  },
-);
+it.each([
+  'Be helpful.',
+  'Use {braces} in JSON examples.',
+  ...['current_user', 'current_date', 'iso_datetime', 'current_datetime', 'current_model'].flatMap(
+    (variable) => [`Hello {{${variable}}}.`, `Hello {{  ${variable.toUpperCase()}\t}}.`],
+  ),
+])('allows built-in context without an input-variables warning: %s', (promptText) => {
+  setup(false, promptText);
+  expect(screen.getByRole('button', { name: 'com_ui_chat_default_set' })).toBeEnabled();
+  expect(screen.queryByText('com_ui_chat_default_variables')).not.toBeInTheDocument();
+});

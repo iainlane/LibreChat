@@ -20,8 +20,17 @@ class PromptReporter extends FakeChatModel {
       providerMessages
         .filter((message) => message._getType() === role)
         .flatMap((message) => JSON.stringify(message.content).match(/E2E_PROMPT_[A-Z]+/g) ?? []);
+    const context = (role) =>
+      providerMessages
+        .filter((message) => message._getType() === role)
+        .flatMap(
+          (message) => JSON.stringify(message.content).match(/E2E_CONTEXT\[[^\]]*\]/g) ?? [],
+        );
+    const contextReport = { system: context('system'), user: context('human') };
     this.responses = [
-      `Prompt report: ${JSON.stringify({ system: tokens('system'), user: tokens('human') })}`,
+      contextReport.system.length + contextReport.user.length > 0
+        ? `Context report: ${JSON.stringify(contextReport)}`
+        : `Prompt report: ${JSON.stringify({ system: tokens('system'), user: tokens('human') })}`,
     ];
     yield* super._streamResponseChunks(messages, options, runManager);
   }

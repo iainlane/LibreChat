@@ -1,21 +1,9 @@
-import { specialVariables } from 'librechat-data-provider';
+import { getSpecialVariable, hasPromptInputVariables } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
 import { getResponseErrorCode } from './errors';
 
-/**
- * Detects the presence of variables in the given text, excluding those found in `specialVariables`.
- */
-export const detectVariables = (text: string): boolean => {
-  // Extract all variables with a simple regex
-  const allVariablesRegex = /{{([^{}]+?)}}/gi;
-  const matches = Array.from(text.matchAll(allVariablesRegex)).map((match) =>
-    match[1].trim().toLowerCase(),
-  );
-
-  // Check if any non-special variables exist
-  return matches.some((variable) => !specialVariables[variable]);
-};
+export const detectVariables = hasPromptInputVariables;
 
 export const wrapVariable = (variable: string) => `{{${variable}}}`;
 
@@ -40,6 +28,9 @@ export const extractVariableInfo = (text: string) => {
 
   while ((match = regex.exec(text)) !== null) {
     const variable = match[1];
+    if (getSpecialVariable(variable) !== undefined) {
+      continue;
+    }
     allVariables.push(variable);
 
     const count = variableCount.get(variable) ?? 0;

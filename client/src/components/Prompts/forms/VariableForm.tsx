@@ -69,16 +69,13 @@ export default function VariableForm({
 }: {
   group: TPromptGroup;
   onClose: () => void;
-  /** Resolved prompt text; falls back to the production prompt when absent. */
+  /** Prompt template with context placeholders intact; falls back to production text. */
   promptText?: string;
 }) {
   const localize = useLocalize();
   const { user } = useAuthContext();
 
-  const mainText = useMemo(() => {
-    const initialText = promptText ?? group.productionPrompt?.prompt ?? '';
-    return replaceSpecialVars({ text: initialText, user });
-  }, [promptText, group.productionPrompt?.prompt, user]);
+  const mainText = promptText ?? group.productionPrompt?.prompt ?? '';
 
   const { allVariables, uniqueVariables, variableIndexMap } = useMemo(
     () => extractVariableInfo(mainText),
@@ -87,7 +84,11 @@ export default function VariableForm({
 
   const { submitPrompt } = useSubmitMessage();
   const recordUsage = useRecordPromptUsage();
-  const { control, handleSubmit } = useForm<FormValues>({
+  const {
+    control,
+    handleSubmit,
+    formState: { isSubmitting },
+  } = useForm<FormValues>({
     defaultValues: {
       fields: uniqueVariables.map((variable) => ({
         variable: wrapVariable(variable),
@@ -123,10 +124,10 @@ export default function VariableForm({
       const highlightText = fieldValue !== '' ? `**${fieldValue}**` : placeholder;
       tempText = tempText.replaceAll(placeholder, highlightText);
     });
-    return tempText;
+    return replaceSpecialVars({ text: tempText, user });
   };
 
-  const onSubmit = (data: FormValues) => {
+  const onSubmit = async (data: FormValues) => {
     let text = mainText;
     data.fields.forEach(({ variable, value }) => {
       if (!value) {
@@ -135,10 +136,12 @@ export default function VariableForm({
 
       const escapedVariable = variable.replace(/[|\\{}()[\]^$+*?.]/g, '\\$&');
       const regex = new RegExp(escapedVariable, 'g');
-      text = text.replace(regex, value);
+      text = text.replace(regex, () => value);
     });
 
-    submitPrompt(text);
+    if (!(await submitPrompt(text))) {
+      return;
+    }
     if (group._id) {
       recordUsage.mutate(group._id);
     }
@@ -219,7 +222,12 @@ export default function VariableForm({
           ))}
         </div>
         <div className="flex justify-end">
-          <Button type="submit" variant="submit" aria-label={localize('com_ui_submit')}>
+          <Button
+            type="submit"
+            variant="submit"
+            disabled={isSubmitting}
+            aria-label={localize('com_ui_submit')}
+          >
             {localize('com_ui_submit')}
           </Button>
         </div>

@@ -33,6 +33,7 @@ function PromptControls() {
     <FormProvider {...methods}>
       <CategorySelector portal={false} />
       <VariablesDropdown portal={false} />
+      <output data-testid="prompt-content">{methods.watch('prompt')}</output>
     </FormProvider>
   );
 }
@@ -50,6 +51,15 @@ function getElementsWithId(container: HTMLElement, id: string) {
 }
 
 describe('prompt dropdown IDs', () => {
+  it('inserts the current model as a built-in context variable', () => {
+    render(<PromptControls />);
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_add_special_variables' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /com_ui_special_var_current_model/ }));
+    expect(screen.getByTestId('prompt-content')).toHaveTextContent(
+      'com_ui_special_var_current_model: {{current_model}}',
+    );
+  });
+
   it('keeps menu relationships unique when multiple prompt forms are mounted', () => {
     const { container } = render(
       <>

@@ -38,7 +38,7 @@ export default function VariablesDropdown({
 
   const usedVariables = useMemo(() => {
     const vars = extractUniqueVariables(promptText);
-    return new Set(vars.map((v) => v.toLowerCase()));
+    return new Set(vars.map((v) => v.trim().toLowerCase()));
   }, [promptText]);
 
   const handleAddVariable = useCallback(

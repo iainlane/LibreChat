@@ -56,7 +56,7 @@ const PromptDetails = ({
         />
       </div>
 
-      {!isLoading && !hasError && <PromptVariables promptText={mainText} />}
+      {!isLoading && !hasError && <PromptVariables promptText={text} />}
 
       {resolved?.source === 'langfuse' && <LangfusePromptMeta resolved={resolved} />}
 
@@ -77,7 +77,7 @@ const PromptDetails = ({
       {showActions && (
         <PromptActions
           group={group}
-          promptText={mainText}
+          promptText={text}
           isLoading={isLoading}
           hasError={hasError}
           onUsePrompt={onUsePrompt}

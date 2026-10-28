@@ -2,7 +2,7 @@ import {
   ErrorTypes,
   PermissionBits,
   ResourceType,
-  hasChatPromptVariables,
+  hasPromptInputVariables,
 } from 'librechat-data-provider';
 import type {
   ChatInstructions,
@@ -87,7 +87,7 @@ export function createChatPromptService(deps: ChatPromptServiceDeps) {
     if (
       !resolved.ok ||
       resolved.value.type !== 'text' ||
-      hasChatPromptVariables(resolved.value.prompt)
+      hasPromptInputVariables(resolved.value.prompt)
     ) {
       throw new ChatPromptUnavailableError();
     }

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, memo, useCallback } from 'react';
+import { atom, useAtom } from 'jotai';
 import { AutoSizer, List } from 'react-virtualized';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { Input, Spinner, useCombobox, useRemScale, useToastContext } from '@librechat/client';
@@ -68,7 +69,7 @@ function PromptsCommand({
 }: {
   index: number;
   textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
-  submitPrompt: (textPrompt: string) => void;
+  submitPrompt: (textPrompt: string) => Promise<boolean>;
 }) {
   const localize = useLocalize();
   const remScale = useRemScale();
@@ -84,6 +85,7 @@ function PromptsCommand({
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isVariableDialogOpen, setVariableDialogOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useAtom(useMemo(() => atom(false), []));
   const [variableGroup, setVariableGroup] = useState<TPromptGroup | null>(null);
   const [variableText, setVariableText] = useState<string | undefined>(undefined);
   const setShowPromptsPopover = useSetRecoilState(store.showPromptsPopoverFamily(index));
@@ -93,6 +95,7 @@ function PromptsCommand({
    *  variable dialog opened from the stale read closes rather than
    *  surviving into the chat the user moved to. */
   const { begin, isCurrent, isMounted } = useChatScopedRequest(index, () => {
+    setIsSubmitting(false);
     setVariableDialogOpen(false);
   });
 
@@ -114,10 +117,11 @@ function PromptsCommand({
 
   const handleSelect = useCallback(
     async (mention?: PromptOption, e?: React.KeyboardEvent<HTMLInputElement>) => {
-      if (!mention) {
+      if (!mention || isSubmitting) {
         return;
       }
 
+      const previousSearch = searchValue;
       setSearchValue('');
       setOpen(false);
       setShowPromptsPopover(false);
@@ -167,7 +171,17 @@ function PromptsCommand({
           setVariableDialogOpen(true);
           return;
         }
-        submitPrompt(text);
+        setIsSubmitting(true);
+        const submitted = await submitPrompt(text);
+        if (!isMounted() || !isCurrent(token)) {
+          return;
+        }
+        if (!submitted) {
+          setShowPromptsPopover(true);
+          setOpen(true);
+          setSearchValue(previousSearch);
+          return;
+        }
         if (group._id) {
           recordUsage(group._id);
         }
@@ -177,9 +191,16 @@ function PromptsCommand({
           showToast({ status: 'error', message: getPromptResolveErrorMessage(error, localize) });
           textAreaRef.current?.focus();
         }
+      } finally {
+        if (isMounted() && isCurrent(token)) {
+          setIsSubmitting(false);
+        }
       }
     },
     [
+      isSubmitting,
+      setIsSubmitting,
+      searchValue,
       setSearchValue,
       setOpen,
       setShowPromptsPopover,
@@ -279,6 +300,7 @@ function PromptsCommand({
       <div className="absolute bottom-28 z-10 w-full space-y-2">
         <div className="popover border-border-light bg-surface-tertiary-alt rounded-theme-popover border p-2 shadow-lg">
           <Input
+            disabled={isSubmitting}
             ref={initInputRef}
             placeholder={localize('com_ui_command_usage_placeholder')}
             variant="embedded"
@@ -328,12 +350,12 @@ function PromptsCommand({
               }, 150);
             }}
           />
-          {open && isLoading && matches.length === 0 && (
+          {open && (isSubmitting || (isLoading && matches.length === 0)) && (
             <div className="text-text-primary flex h-32 items-center justify-center">
               <Spinner />
             </div>
           )}
-          {open && matches.length > 0 && (
+          {open && !isSubmitting && matches.length > 0 && (
             <div className="max-h-40">
               <AutoSizer disableHeight>
                 {({ width }) => (

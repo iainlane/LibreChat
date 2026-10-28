@@ -156,6 +156,7 @@ const FULL_BITS =
   PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
 
 beforeEach(() => {
+  mockSubmitPrompt.mockReset().mockResolvedValue(true);
   mockDraftToken.current = Symbol('new-conversation-draft');
   getDefaultStore().set(navigationGenerationAtom, 0);
 });
@@ -231,6 +232,17 @@ describe('ChatGroupItem chat-route click', () => {
       Promise.resolve(group.productionPrompt?.prompt ?? ''),
     );
     mockConversation.current = { conversationId: 'convo-1' };
+  });
+
+  it('records no usage after failed insertion and permits another selection', async () => {
+    mockSubmitPrompt.mockResolvedValueOnce(false);
+    renderChatGroup(makeGroup({ productionPrompt: { prompt: '{{current_model}}' } }));
+    const user = userEvent.setup();
+    await user.click(getCardButton());
+    await waitFor(() => expect(getCardButton()).toBeEnabled());
+    expect(mockRecordUsageMutate).not.toHaveBeenCalled();
+    await user.click(getCardButton());
+    await waitFor(() => expect(mockRecordUsageMutate.mock.calls).toStrictEqual([['group-1']]));
   });
 
   it('resolves a Langfuse group before submitting, and records usage once', async () => {

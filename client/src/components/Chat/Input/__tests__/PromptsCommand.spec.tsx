@@ -192,7 +192,7 @@ const renderCommand = () => {
  *  reads `useLocation()`. */
 const renderPromptsCommand = (
   textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>,
-  submitPrompt: (textPrompt: string) => void,
+  submitPrompt: (textPrompt: string) => Promise<boolean>,
   initialPath = '/c/convo-1',
 ) =>
   render(
@@ -345,9 +345,20 @@ describe('PromptsCommand Langfuse resolve', () => {
     expect(screen.getByText('com_ui_prompt_source_langfuse')).toBeInTheDocument();
   });
 
+  it('reopens the picker without recording usage after insertion fails', async () => {
+    const submitPrompt = jest.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+    const textAreaRef = makeTextarea('/');
+    renderPromptsCommand(textAreaRef, submitPrompt);
+    fireEvent.click(screen.getByText('Alpha'));
+    await waitFor(() => expect(mockSetShowPromptsPopover).toHaveBeenLastCalledWith(true));
+    expect(mockRecordUsage).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Alpha'));
+    await waitFor(() => expect(mockRecordUsage.mock.calls).toStrictEqual([['1']]));
+  });
+
   it('shows the resolving toast, submits the resolved text, and records usage once', async () => {
     mockResolve.mockResolvedValueOnce('Resolved Gamma text');
-    const submitPrompt = jest.fn();
+    const submitPrompt = jest.fn().mockResolvedValue(true);
     const textAreaRef = makeTextarea('/');
     renderPromptsCommand(textAreaRef, submitPrompt);
 
@@ -366,7 +377,7 @@ describe('PromptsCommand Langfuse resolve', () => {
 
   it('submits and records nothing, and refocuses the textarea, when a Langfuse resolve returns only whitespace', async () => {
     mockResolve.mockResolvedValueOnce('   ');
-    const submitPrompt = jest.fn();
+    const submitPrompt = jest.fn().mockResolvedValue(true);
     const textAreaRef = makeTextarea('/');
     renderPromptsCommand(textAreaRef, submitPrompt);
 
@@ -380,7 +391,7 @@ describe('PromptsCommand Langfuse resolve', () => {
 
   it('shows the error toast and submits/records nothing when resolution fails', async () => {
     mockResolve.mockRejectedValueOnce(new Error('boom'));
-    const submitPrompt = jest.fn();
+    const submitPrompt = jest.fn().mockResolvedValue(true);
     const textAreaRef = makeTextarea('/');
     renderPromptsCommand(textAreaRef, submitPrompt);
 
@@ -398,7 +409,7 @@ describe('PromptsCommand Langfuse resolve', () => {
 
   it('focuses the textarea when a Tab-selected Langfuse resolve fails', async () => {
     mockResolve.mockRejectedValueOnce(new Error('boom'));
-    const submitPrompt = jest.fn();
+    const submitPrompt = jest.fn().mockResolvedValue(true);
     const textAreaRef = makeTextarea('/');
     renderPromptsCommand(textAreaRef, submitPrompt);
 
@@ -425,7 +436,7 @@ describe('PromptsCommand Langfuse resolve', () => {
           resolveFn = resolve;
         }),
     );
-    const submitPrompt = jest.fn();
+    const submitPrompt = jest.fn().mockResolvedValue(true);
     const textAreaRef = makeTextarea('/');
     const { unmount } = renderPromptsCommand(textAreaRef, submitPrompt);
 
@@ -450,7 +461,7 @@ describe('PromptsCommand Langfuse resolve', () => {
         }),
     );
     mockConversation.current = { conversationId: 'new' };
-    const submitPrompt = jest.fn();
+    const submitPrompt = jest.fn().mockResolvedValue(true);
     const textAreaRef = makeTextarea('/');
     const { rerender } = renderPromptsCommand(textAreaRef, submitPrompt);
 
@@ -491,7 +502,7 @@ describe('PromptsCommand Langfuse resolve', () => {
         }),
     );
     mockConversation.current = { conversationId: 'convo-1' };
-    const submitPrompt = jest.fn();
+    const submitPrompt = jest.fn().mockResolvedValue(true);
     const textAreaRef = makeTextarea('/');
     renderPromptsCommand(textAreaRef, submitPrompt);
 
@@ -532,7 +543,7 @@ describe('PromptsCommand Langfuse resolve', () => {
         }),
     );
     mockConversation.current = { conversationId: 'convo-1' };
-    const submitPrompt = jest.fn();
+    const submitPrompt = jest.fn().mockResolvedValue(true);
     const textAreaRef = makeTextarea('/');
     render(
       <MemoryRouter initialEntries={['/c/convo-1']}>
@@ -574,7 +585,7 @@ describe('PromptsCommand Langfuse resolve', () => {
         }),
     );
     mockConversation.current = { conversationId: 'new' };
-    const submitPrompt = jest.fn();
+    const submitPrompt = jest.fn().mockResolvedValue(true);
     const textAreaRef = makeTextarea('/');
     render(
       <MemoryRouter initialEntries={['/c/new']}>
@@ -606,7 +617,7 @@ describe('PromptsCommand Langfuse resolve', () => {
         }),
     );
     mockConversation.current = { conversationId: 'new' };
-    const submitPrompt = jest.fn();
+    const submitPrompt = jest.fn().mockResolvedValue(true);
     const textAreaRef = makeTextarea('/');
     const { rerender } = renderPromptsCommand(textAreaRef, submitPrompt);
 
@@ -634,7 +645,7 @@ describe('PromptsCommand Langfuse resolve', () => {
       () => new Promise<string>((resolve) => setTimeout(() => resolve('Resolved Gamma text'), 0)),
     );
     mockConversation.current = { conversationId: 'convo-1' };
-    const submitPrompt = jest.fn();
+    const submitPrompt = jest.fn().mockResolvedValue(true);
     const textAreaRef = makeTextarea('/');
     const { rerender } = renderPromptsCommand(textAreaRef, submitPrompt);
 
@@ -664,7 +675,7 @@ describe('PromptsCommand Langfuse resolve', () => {
   });
 
   it('shows no toast and submits immediately for a native entry', async () => {
-    const submitPrompt = jest.fn();
+    const submitPrompt = jest.fn().mockResolvedValue(true);
     const textAreaRef = makeTextarea('/');
     renderPromptsCommand(textAreaRef, submitPrompt);
 
@@ -677,7 +688,7 @@ describe('PromptsCommand Langfuse resolve', () => {
 
   it('closes the variable dialog when a navigation starts while it is open', async () => {
     mockResolve.mockResolvedValueOnce('Hello {{name}}');
-    const submitPrompt = jest.fn();
+    const submitPrompt = jest.fn().mockResolvedValue(true);
     const textAreaRef = makeTextarea('/');
     renderPromptsCommand(textAreaRef, submitPrompt);
 
@@ -701,7 +712,7 @@ describe('PromptsCommand Langfuse resolve', () => {
           resolveFn = resolve;
         }),
     );
-    const submitPrompt = jest.fn();
+    const submitPrompt = jest.fn().mockResolvedValue(true);
     const textAreaRef = makeTextarea('/');
     renderPromptsCommand(textAreaRef, submitPrompt);
 

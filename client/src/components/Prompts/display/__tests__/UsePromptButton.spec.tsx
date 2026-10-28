@@ -52,11 +52,42 @@ function renderButton(chatIndex?: number) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockSubmitPrompt.mockResolvedValue(true);
   mockConversation.current = { conversationId: 'convo-1' };
   getDefaultStore().set(navigationGenerationAtom, 0);
 });
 
 describe('UsePromptButton chat-scoped variable dialog', () => {
+  it.each([false, true])(
+    'waits for insertion before closing or recording usage (accepted=%s)',
+    async (accepted) => {
+      const pending = Promise.withResolvers<boolean>();
+      mockSubmitPrompt.mockReturnValue(pending.promise);
+      const onUsePrompt = jest.fn();
+      render(
+        <MemoryRouter>
+          <UsePromptButton
+            group={makeGroup()}
+            promptText="{{current_model}}"
+            onUsePrompt={onUsePrompt}
+          />
+        </MemoryRouter>,
+      );
+      const user = userEvent.setup();
+      const button = screen.getByRole('button', { name: 'com_ui_use_prompt' });
+      await user.click(button);
+      expect(button).toBeDisabled();
+      expect(mockRecordUsageMutate).not.toHaveBeenCalled();
+      expect(onUsePrompt).not.toHaveBeenCalled();
+      await act(async () => {
+        pending.resolve(accepted);
+      });
+      expect(button).toBeEnabled();
+      expect(mockRecordUsageMutate.mock.calls).toStrictEqual(accepted ? [['group-1']] : []);
+      expect(onUsePrompt).toHaveBeenCalledTimes(accepted ? 1 : 0);
+    },
+  );
+
   it('closes the variable dialog when a navigation starts, for a button rendered inside a chat', async () => {
     const user = userEvent.setup();
     renderButton(0);

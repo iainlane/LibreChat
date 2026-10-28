@@ -109,6 +109,7 @@ projects:
 #       name: General assistant
 #       prompt: |
 #         Answer clearly and explain uncertainty when it matters.
+#         The selected model is {{current_model}}. Today is {{current_date}}.
 #   defaultChatPrompt: general-assistant
 
 # File storage configuration

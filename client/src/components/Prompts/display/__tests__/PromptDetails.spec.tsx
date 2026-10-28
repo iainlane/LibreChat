@@ -25,7 +25,10 @@ const resolvePromptGroup = dataService.resolvePromptGroup as jest.MockedFunction
 const mockSubmitPrompt = jest.fn();
 const mockRecordUsage = jest.fn();
 // Mutable so individual tests can exercise an admin vs. a regular user.
-let mockUser: { id: string; role?: string } = { id: 'user-1', role: SystemRoles.USER };
+let mockUser: { id: string; role?: string; name?: string } = {
+  id: 'user-1',
+  role: SystemRoles.USER,
+};
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: Record<string, unknown>) =>
@@ -94,6 +97,7 @@ function renderDetails(group: TPromptGroup) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockSubmitPrompt.mockResolvedValue(true);
   mockUser = { id: 'user-1', role: SystemRoles.USER };
 });
 
@@ -112,6 +116,51 @@ describe('PromptDetails', () => {
     expect(resolvePromptGroup).not.toHaveBeenCalled();
     expect(findSourceBadge(container)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'com_ui_use_prompt' })).toBeEnabled();
+  });
+
+  it.each([false, true])(
+    'submits raw context variables without interpreting preview data (interactive=%s)',
+    async (interactive) => {
+      mockUser = { ...mockUser, name: 'Literal {{unexpected}}' };
+      const text = `Hello {{current_user}} from {{current_model}}${interactive ? ' about {{topic}}' : ''}.`;
+      renderDetails(makeGroup({ productionPrompt: { prompt: text } }));
+
+      fireEvent.click(screen.getByRole('button', { name: 'com_ui_use_prompt' }));
+      if (interactive) {
+        expect(
+          screen.getAllByRole('textbox').map((input) => input.getAttribute('aria-label')),
+        ).toStrictEqual(['topic']);
+        fireEvent.change(screen.getByRole('textbox', { name: 'topic' }), {
+          target: { value: 'weather' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'com_ui_submit' }));
+      }
+
+      await waitFor(() =>
+        expect(mockSubmitPrompt).toHaveBeenCalledWith(
+          interactive ? text.replace('{{topic}}', 'weather') : text,
+        ),
+      );
+    },
+  );
+
+  it('keeps filled variable inputs when model lookup fails and permits retry', async () => {
+    mockSubmitPrompt.mockResolvedValueOnce(false);
+    renderDetails(makeGroup({ productionPrompt: { prompt: '{{topic}} {{current_model}}' } }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_use_prompt' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'topic' }), {
+      target: { value: 'weather' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_submit' }));
+    await waitFor(() => expect(mockSubmitPrompt).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('textbox', { name: 'topic' })).toHaveValue('weather');
+    expect(mockRecordUsage).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'com_ui_submit' })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_submit' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(mockRecordUsage.mock.calls).toStrictEqual([['group-1']]);
   });
 
   it('shows the resolving label and disables Use while a Langfuse group is loading', () => {

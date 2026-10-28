@@ -2614,8 +2614,13 @@ export async function initializeAgent(
     const resolvedInstructions = replaceSpecialVars({
       text: agent.instructions,
       user: user ? (user as unknown as TUser) : null,
+      model: agent.model ?? undefined,
       now: runtime.turnStartedAt,
       timezone: runtime.requestBody.timezone,
+    });
+    assertModelBoundContent({
+      filters: appConfig?.filters,
+      agents: [{ instructions: resolvedInstructions }],
     });
     if (hasTemporalSpecialVars(agent.instructions)) {
       agent.instructions = undefined;

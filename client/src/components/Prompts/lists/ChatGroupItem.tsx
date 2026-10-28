@@ -114,9 +114,7 @@ function ChatGroupItem({
     }
 
     const token = begin();
-    if (isExternal) {
-      setIsResolving(true);
-    }
+    setIsResolving(true);
     try {
       const text = await resolvePromptContent(group);
       /** The row may have unmounted, or the active conversation may have
@@ -136,7 +134,10 @@ function ChatGroupItem({
         return;
       }
 
-      submitPrompt(text);
+      const submitted = await submitPrompt(text);
+      if (!submitted || !isMounted() || !isCurrent(token)) {
+        return;
+      }
       if (group._id) {
         recordUsage.mutate(group._id);
       }
@@ -145,7 +146,7 @@ function ChatGroupItem({
         showToast({ status: 'error', message: getPromptResolveErrorMessage(error, localize) });
       }
     } finally {
-      if (isExternal && isMounted() && isCurrent(token)) {
+      if (isMounted() && isCurrent(token)) {
         setIsResolving(false);
       }
     }
@@ -156,7 +157,6 @@ function ChatGroupItem({
     isChatRoute,
     navigate,
     isResolving,
-    isExternal,
     resolvePromptContent,
     showToast,
     localize,

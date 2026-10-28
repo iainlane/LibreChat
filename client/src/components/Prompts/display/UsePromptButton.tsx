@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Send } from 'lucide-react';
+import { atom, useAtom } from 'jotai';
 import { Button } from '@librechat/client';
 import type { TPromptGroup } from 'librechat-data-provider';
 import useChatScopedRequest from '~/hooks/Prompts/useChatScopedRequest';
@@ -54,24 +55,41 @@ const UsePromptButton = ({
   const { submitPrompt } = useSubmitMessage();
   const { mutate: recordUsage } = useRecordPromptUsage();
   const [showVariableDialog, setShowVariableDialog] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useAtom(useMemo(() => atom(false), []));
 
   const hasVariables = useMemo(() => detectVariables(promptText), [promptText]);
-  const disabled = isLoading || hasError || promptText.trim().length === 0;
+  const disabled = isLoading || hasError || isSubmitting || promptText.trim().length === 0;
 
-  const handleUsePrompt = useCallback(() => {
+  const handleUsePrompt = useCallback(async () => {
     if (disabled) {
       return;
     }
     if (hasVariables) {
       setShowVariableDialog(true);
     } else {
-      submitPrompt(promptText);
-      if (group._id) {
-        recordUsage(group._id);
+      setIsSubmitting(true);
+      try {
+        if (!(await submitPrompt(promptText))) {
+          return;
+        }
+        if (group._id) {
+          recordUsage(group._id);
+        }
+        onUsePrompt?.();
+      } finally {
+        setIsSubmitting(false);
       }
-      onUsePrompt?.();
     }
-  }, [disabled, hasVariables, submitPrompt, promptText, onUsePrompt, group._id, recordUsage]);
+  }, [
+    disabled,
+    hasVariables,
+    submitPrompt,
+    promptText,
+    onUsePrompt,
+    group._id,
+    recordUsage,
+    setIsSubmitting,
+  ]);
 
   const handleVariableDialogClose = useCallback(() => {
     setShowVariableDialog(false);

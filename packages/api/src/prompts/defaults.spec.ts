@@ -102,7 +102,26 @@ describe('ordinary chat instructions', () => {
     expect(resolvePrompt).not.toHaveBeenCalled();
   });
 
-  it.each(['topic', 'current_user', 'current_date', 'iso_datetime', 'current_datetime'])(
+  it.each(['current_user', 'current_date', 'iso_datetime', 'current_datetime', 'current_model'])(
+    'defers the built-in %s variable to turn initialization',
+    async (variable) => {
+      const { service, resolvePrompt } = setup();
+      const prompt = `Help {{${variable}}}.`;
+      resolvePrompt.mockResolvedValue({
+        ok: true,
+        value: { source: 'native', groupId, promptId, prompt, type: 'text' },
+      });
+
+      await expect(
+        service.resolveInstructions({
+          user: { ...user, personalization: { defaultChatPrompt: reference } },
+          config: {},
+        }),
+      ).resolves.toBe(prompt);
+    },
+  );
+
+  it.each(['topic', 'current_model_name'])(
     'rejects a default prompt with the unresolved %s variable',
     async (variable) => {
       const { service, resolvePrompt } = setup();
