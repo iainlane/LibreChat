@@ -1,13 +1,26 @@
 import { expect, test } from '@playwright/test';
 import type { APIRequestContext, Page } from '@playwright/test';
 import type { TPromptGroup, TCreatePromptResponse } from 'librechat-data-provider';
+import type { MockEndpoint } from '../specs/mock/helpers';
 import {
   MOCK_ENDPOINTS,
+  escapeRegExp,
   getAccessToken,
-  selectMockEndpoint,
   modelSelectorTrigger,
   sendMessageAndWaitForCompletion,
 } from '../specs/mock/helpers';
+
+async function selectMockEndpoint(page: Page, endpoint: MockEndpoint) {
+  const trigger = modelSelectorTrigger(page);
+  await trigger.click();
+  await page.getByRole('option', { name: endpoint.label }).click();
+  const model = page.getByRole('option', {
+    name: new RegExp(`^${escapeRegExp(endpoint.model)}(?: selected)?$`),
+  });
+  await model.click();
+  await expect(page.getByRole('dialog', { name: 'Select a model', exact: true })).toHaveCount(0);
+  await expect(trigger).toContainText(endpoint.model);
+}
 
 async function headers(page: Page) {
   const token = await getAccessToken(page);
@@ -213,4 +226,61 @@ test('model variables follow ordinary chats and saved Agents after reloads', asy
       .last(),
   ).toBeVisible();
   await preferences(page, request, 'inherit');
+});
+
+test('ordinary chats enable configured tools and preserve explicit choices', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(90_000);
+  page.setDefaultTimeout(15_000);
+  await page.goto('/c/new');
+  await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+
+  const enabledTools = page.getByTestId('composer-active-builtin');
+  const code = enabledTools.filter({ hasText: 'Run Code' });
+  await expect(enabledTools).toHaveText(['File Search', 'Run Code', 'Skills']);
+  await code.getByRole('button', { name: 'Remove Run Code', exact: true }).click();
+  await expect(enabledTools).toHaveText(['File Search', 'Skills']);
+  const [chatRequest] = await Promise.all([
+    page.waitForRequest(
+      (sent) =>
+        sent.method() === 'POST' &&
+        new URL(sent.url()).pathname ===
+          `/api/agents/chat/${encodeURIComponent(MOCK_ENDPOINTS[0].label)}`,
+    ),
+    report(page, ['E2E_PROMPT_DEPLOYMENT']),
+  ]);
+  const payload: unknown = chatRequest.postDataJSON();
+  expect(payload).toEqual(
+    expect.objectContaining({
+      ephemeralAgent: { execute_code: false, file_search: true, skills: true },
+    }),
+  );
+  await page.reload();
+  await expect(enabledTools).toHaveText(['File Search', 'Skills']);
+  await page.getByTestId('new-chat-button').click();
+  await expect(page).toHaveURL(/\/c\/new$/);
+  await expect(enabledTools).toHaveText(['File Search', 'Skills']);
+  await page.reload();
+  await expect(enabledTools).toHaveText(['File Search', 'Skills']);
+
+  const agentResponse = await request.post('/api/agents', {
+    headers: await headers(page),
+    data: {
+      name: 'Independent tool Agent',
+      provider: MOCK_ENDPOINTS[0].label,
+      model: MOCK_ENDPOINTS[0].model,
+      model_parameters: {},
+      tools: [],
+      instructions: 'E2E_PROMPT_AGENT',
+    },
+  });
+  expect(agentResponse.ok()).toBe(true);
+  await page.reload();
+  await modelSelectorTrigger(page).click();
+  await page.getByRole('option', { name: 'My Agents', exact: true }).click();
+  await page.getByRole('option', { name: 'Independent tool Agent', exact: true }).click();
+  await expect(enabledTools).toHaveCount(0);
+  await report(page, ['E2E_PROMPT_AGENT']);
 });

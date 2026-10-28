@@ -210,6 +210,38 @@ export default function BadgeRowProvider({
     }
   }, [storageSuffix, specName, isSubmitting, setEphemeralAgent]);
 
+  const defaultEnabledTools = startupConfig?.interface?.defaultEnabledTools;
+  const defaultsContextRef = useRef<string | null>(null);
+
+  /** Switches on the configured `defaultEnabledTools` once per new-chat context. This effect must
+   *  run after the localStorage initialization above, so a tool with a stored choice already has
+   *  a value and keeps it. */
+  useEffect(() => {
+    if (!isNewConvo || specName) {
+      defaultsContextRef.current = null;
+      return;
+    }
+
+    if (
+      isSubmitting ||
+      defaultEnabledTools == null ||
+      defaultsContextRef.current === storageSuffix
+    ) {
+      return;
+    }
+
+    defaultsContextRef.current = storageSuffix;
+
+    setEphemeralAgent((prev) => {
+      const unset = defaultEnabledTools.filter((tool) => prev?.[tool] === undefined);
+      if (unset.length === 0) {
+        return prev;
+      }
+
+      return { ...prev, ...Object.fromEntries(unset.map((tool) => [tool, true])) };
+    });
+  }, [isNewConvo, specName, isSubmitting, defaultEnabledTools, storageSuffix, setEphemeralAgent]);
+
   /** CodeInterpreter hook — sandbox auth is handled server-side by the
    *  agents library, so the toggle no longer has an auth dialog gate. */
   const codeInterpreter = useToolToggle({

@@ -1,4 +1,4 @@
-import { getConfigDefaults, RetentionMode } from 'librechat-data-provider';
+import { getConfigDefaults, AgentCapabilities, RetentionMode } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig } from '~/types';
 import { loadDefaultInterface, deriveSpecInterface } from './interface';
@@ -419,6 +419,30 @@ describe('loadDefaultInterface', () => {
     });
 
     expect(interfaceConfig).not.toHaveProperty('defaultPinnedTools');
+  });
+
+  it('passes through configured default enabled tools', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        defaultEnabledTools: [AgentCapabilities.execute_code, AgentCapabilities.skills],
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.defaultEnabledTools).toEqual(['execute_code', 'skills']);
+  });
+
+  it('omits default enabled tools when not explicitly configured', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig).not.toHaveProperty('defaultEnabledTools');
   });
 
   it('passes the trace viewer section through unchanged', async () => {

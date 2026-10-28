@@ -3079,6 +3079,17 @@ export const isAllDataRetention = (mode?: RetentionMode | null): boolean =>
 export const isForcedTemporaryRetention = (mode?: RetentionMode | null): boolean =>
   mode === RetentionMode.EPHEMERAL;
 
+/** Composer tools that `interface.defaultEnabledTools` can switch on in a new chat. */
+export const defaultEnabledToolSchema = z.enum([
+  AgentCapabilities.execute_code,
+  AgentCapabilities.web_search,
+  AgentCapabilities.file_search,
+  AgentCapabilities.skills,
+  AgentCapabilities.memory,
+]);
+
+export type DefaultEnabledTool = z.infer<typeof defaultEnabledToolSchema>;
+
 export const interfaceSchema = z
   .object({
     theme: deploymentThemeSchema.optional(),
@@ -3187,6 +3198,8 @@ export const interfaceSchema = z
     traceViewer: traceViewerSchema.optional(),
     /** Tool keys (and `'mcp'` or an MCP server name) pinned to the prompt bar by default */
     defaultPinnedTools: z.array(z.string()).optional(),
+    /** Tools switched on in a new chat without a model spec, unless the user has a stored choice */
+    defaultEnabledTools: z.array(defaultEnabledToolSchema).optional(),
     buildInfo: z.boolean().optional(),
     /** Allows Lia, the welcome screen mascot. Users still opt in from Settings. */
     mascot: z.boolean().optional(),

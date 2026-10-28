@@ -11,10 +11,19 @@ const baseConfig = yaml.load(original);
 if (baseConfig === null || typeof baseConfig !== 'object' || Array.isArray(baseConfig)) {
   throw new Error('The mock configuration must be a YAML object.');
 }
+const baseInterface = 'interface' in baseConfig ? baseConfig.interface : undefined;
+if (baseInterface === null || typeof baseInterface !== 'object' || Array.isArray(baseInterface)) {
+  throw new Error('The mock interface configuration must be a YAML object.');
+}
 fs.writeFileSync(
   configPath,
   yaml.dump({
     ...baseConfig,
+    modelSpecs: undefined,
+    interface: {
+      ...baseInterface,
+      defaultEnabledTools: ['execute_code', 'skills', 'file_search'],
+    },
     mcpServers: {},
     prompts: {
       library: [{ id: 'general', name: 'General assistant', prompt: 'E2E_PROMPT_DEPLOYMENT' }],

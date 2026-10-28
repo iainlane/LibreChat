@@ -1620,6 +1620,18 @@ describe('interfaceSchema', () => {
     expect(result.defaultPinnedTools).toBeUndefined();
   });
 
+  it('accepts defaultEnabledTools for the boolean composer tools', () => {
+    const tools = ['execute_code', 'web_search', 'file_search', 'skills', 'memory'];
+
+    expect(interfaceSchema.parse({ defaultEnabledTools: tools }).defaultEnabledTools).toEqual(
+      tools,
+    );
+  });
+
+  it.each(['artifacts', 'mcp', 'execute-code'])('rejects %s in defaultEnabledTools', (tool) => {
+    expect(interfaceSchema.safeParse({ defaultEnabledTools: [tool] }).success).toBe(false);
+  });
+
   it('accepts the ephemeral retention mode', () => {
     const result = interfaceSchema.parse({ retentionMode: RetentionMode.EPHEMERAL });
     expect(result.retentionMode).toBe(RetentionMode.EPHEMERAL);
