@@ -1,10 +1,16 @@
 import { z } from 'zod';
 import type { TPromptGroupSource } from './types';
+import { getSpecialVariable } from './variables';
 
 const recordId = z.string().regex(/^[a-f\d]{24}$/);
 
-export function hasChatPromptVariables(prompt: string): boolean {
-  return /\{\{[^}]+\}\}/.test(prompt);
+export function hasPromptInputVariables(prompt: string): boolean {
+  for (const [, variable] of prompt.matchAll(/\{\{([^{}]+)\}\}/g)) {
+    if (getSpecialVariable(variable) === undefined) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export const promptReferenceSchema = z

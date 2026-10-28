@@ -12,7 +12,8 @@ export default function useSubmitMessage() {
   const { user } = useAuthContext();
   const methods = useChatFormContext();
   const { conversation: addedConvo } = useAddedChatContext();
-  const { ask, index, getMessages, setMessages } = useChatContext();
+  const { ask, index, conversation, getMessages, setMessages } = useChatContext();
+  const model = conversation?.model ?? undefined;
   const getLatestMessage = useGetLatestMessage(index);
 
   const autoSendPrompts = useRecoilValue(store.autoSendPrompts);
@@ -73,7 +74,7 @@ export default function useSubmitMessage() {
 
   const submitPrompt = useCallback(
     (text: string) => {
-      const parsedText = replaceSpecialVars({ text, user });
+      const parsedText = replaceSpecialVars({ text, user, model });
       if (autoSendPrompts && submitMessage({ text: parsedText }) !== false) {
         return;
       }
@@ -86,7 +87,7 @@ export default function useSubmitMessage() {
       const newText = currentText.trim().length > 1 ? `\n${parsedText}` : parsedText;
       setActivePrompt(newText);
     },
-    [autoSendPrompts, submitMessage, setActivePrompt, methods, user],
+    [autoSendPrompts, submitMessage, setActivePrompt, methods, user, model],
   );
 
   return { submitMessage, submitPrompt };

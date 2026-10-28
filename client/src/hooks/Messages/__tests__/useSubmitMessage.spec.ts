@@ -1,5 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { replaceSpecialVars } from 'librechat-data-provider';
 import type { TReasoningOverride } from 'librechat-data-provider';
 import { useChatContext, useChatFormContext, useAddedChatContext } from '~/Providers';
 import { useGetLatestMessage } from '~/hooks/Messages/useLatestMessage';
@@ -65,8 +66,19 @@ describe('useSubmitMessage', () => {
     mockUseChatContext.mockReturnValue({
       ask,
       index: 0,
+      conversation: { model: 'provider/selected-model' },
       getMessages,
       setMessages,
+    });
+  });
+
+  it('uses the selected model when inserting a library prompt', () => {
+    const { result } = renderHook(() => useSubmitMessage());
+    act(() => result.current.submitPrompt('You are {{current_model}}.'));
+    expect(replaceSpecialVars).toHaveBeenCalledWith({
+      text: 'You are {{current_model}}.',
+      user: { id: 'user-1' },
+      model: 'provider/selected-model',
     });
   });
 

@@ -4,6 +4,7 @@ export * from './bedrock';
 export * from './balance';
 export * from './config';
 export * from './prompts';
+export { getSpecialVariable } from './variables';
 export * from './footer';
 export * from './theme';
 export * from './themes';

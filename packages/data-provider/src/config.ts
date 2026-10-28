@@ -40,6 +40,7 @@ import {
   scheduledMCPReadOnlyPolicySchema,
 } from './types/scheduleConsent';
 import { promptLibrarySchema } from './prompts';
+import { specialVariables } from './variables';
 import { partialWithoutDefaults } from './zod';
 
 export const AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_DEFAULT = 24 * 1024;
@@ -6015,12 +6016,7 @@ export const providerEndpointMap = {
   [EModelEndpoint.azureOpenAI]: EModelEndpoint.azureOpenAI,
 };
 
-export const specialVariables = {
-  current_date: true,
-  current_user: true,
-  iso_datetime: true,
-  current_datetime: true,
-};
+export { specialVariables } from './variables';
 
 export type TSpecialVarLabel = `com_ui_special_var_${keyof typeof specialVariables}`;
 

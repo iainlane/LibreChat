@@ -1,4 +1,8 @@
-import { chatInstructionsSchema, chatPromptDefaultSchema, hasChatPromptVariables } from './prompts';
+import {
+  chatInstructionsSchema,
+  chatPromptDefaultSchema,
+  hasPromptInputVariables,
+} from './prompts';
 import { EModelEndpoint } from './schemas';
 import { configSchema } from './config';
 import { parseConvo } from './parsers';
@@ -71,17 +75,24 @@ describe('ordinary chat instruction persistence', () => {
 });
 
 describe('chat default prompt variables', () => {
-  it.each(['topic', 'current_user', 'current_date', 'iso_datetime', 'current_datetime'])(
+  it.each(['topic', 'tone:formal|casual', 'constructor', 'current_model:one|two'])(
     'recognises the unresolved %s variable',
     (variable) => {
-      expect(hasChatPromptVariables(`Hello {{${variable}}}.`)).toBe(true);
+      expect(hasPromptInputVariables(`Hello {{${variable}}}.`)).toBe(true);
     },
   );
 
-  it.each(['Be helpful.', 'Use {braces} in JSON examples.'])(
-    'accepts plain text without variables: %s',
-    (prompt) => {
-      expect(hasChatPromptVariables(prompt)).toBe(false);
-    },
-  );
+  it.each([
+    'Be helpful.',
+    'Use {braces} in JSON examples.',
+    ...[
+      'current_user',
+      'current_date',
+      'iso_datetime',
+      'current_datetime',
+      'current_model',
+    ].flatMap((variable) => [`Hello {{${variable}}}.`, `Hello {{  ${variable.toUpperCase()}\t}}.`]),
+  ])('accepts text without interactive variables: %s', (prompt) => {
+    expect(hasPromptInputVariables(prompt)).toBe(false);
+  });
 });

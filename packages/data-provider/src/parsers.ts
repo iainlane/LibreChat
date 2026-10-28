@@ -19,6 +19,7 @@ import {
   compactGoogleSchema,
   compactAssistantSchema,
 } from './schemas';
+import { getSpecialVariable, specialVariables } from './variables';
 import { bedrockInputSchema } from './bedrock';
 import { ContentTypes } from './types/runs';
 import { alternateName } from './config';
@@ -478,36 +479,34 @@ function applyTimezone(value: dayjs.Dayjs, timezone?: string): dayjs.Dayjs {
 export function replaceSpecialVars({
   text,
   user,
+  model,
   now: inputNow,
   timezone,
 }: {
   text: string;
   user?: t.TUser | null;
+  model?: string;
   now?: string | number | Date;
   timezone?: string;
 }) {
-  let result = text;
-  if (!result) {
-    return result;
+  if (!text) {
+    return text;
   }
 
   const now = applyTimezone(inputNow != null ? dayjs(inputNow) : dayjs(), timezone);
   const weekdayName = now.format('dddd');
+  const values: Record<keyof typeof specialVariables, string | undefined> = {
+    current_date: `${now.format('YYYY-MM-DD')} (${weekdayName})`,
+    current_datetime: `${now.format('YYYY-MM-DD HH:mm:ss Z')} (${weekdayName})`,
+    iso_datetime: now.toISOString(),
+    current_user: user?.name || undefined,
+    current_model: model || undefined,
+  };
 
-  const currentDate = now.format('YYYY-MM-DD');
-  result = result.replace(/{{\s*current_date\s*}}/gi, `${currentDate} (${weekdayName})`);
-
-  const currentDatetime = now.format('YYYY-MM-DD HH:mm:ss Z');
-  result = result.replace(/{{\s*current_datetime\s*}}/gi, `${currentDatetime} (${weekdayName})`);
-
-  const isoDatetime = now.toISOString();
-  result = result.replace(/{{\s*iso_datetime\s*}}/gi, isoDatetime);
-
-  if (user && user.name) {
-    result = result.replace(/{{\s*current_user\s*}}/gi, user.name);
-  }
-
-  return result;
+  return text.replace(/\{\{([^{}]+)\}\}/g, (placeholder, variable: string) => {
+    const key = getSpecialVariable(variable);
+    return key === undefined ? placeholder : (values[key] ?? placeholder);
+  });
 }
 
 /**

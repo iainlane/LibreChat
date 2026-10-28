@@ -148,6 +148,32 @@ describe('replaceSpecialVars', () => {
     expect(result).toBe('Date: 2024-04-29 (Monday), User: Test User');
   });
 
+  test.each(['{{current_model}}', '{{ CURRENT_MODEL }}', '{{\tCurrent_Model\n}}'])(
+    'replaces the model variable %s',
+    (text) => {
+      expect(replaceSpecialVars({ text, model: 'provider/model-id' })).toBe('provider/model-id');
+    },
+  );
+
+  test('preserves the model placeholder when model context is unavailable', () => {
+    expect(replaceSpecialVars({ text: '{{current_model}}' })).toBe('{{current_model}}');
+  });
+
+  test('inserts context literally without interpreting replacements or nested variables', () => {
+    expect(
+      replaceSpecialVars({
+        text: '{{current_user}} | {{current_model}} | {{current_date}}',
+        user: { ...mockUser, name: '$& {{current_model}}' },
+        model: '$` {{current_date}}',
+      }),
+    ).toBe('$& {{current_model}} | $` {{current_date}} | 2024-04-29 (Monday)');
+  });
+
+  test('preserves unrecognised and interactive placeholders', () => {
+    const text = '{{topic}} {{constructor}} {{current_model:one|two}}';
+    expect(replaceSpecialVars({ text, model: 'test-model' })).toBe(text);
+  });
+
   test('should confirm all specialVariables from config.ts get parsed', () => {
     // Create a text that includes all special variables
     const specialVarsText = Object.keys(specialVariables)
@@ -157,6 +183,7 @@ describe('replaceSpecialVars', () => {
     const result = replaceSpecialVars({
       text: specialVarsText,
       user: mockUser,
+      model: 'test-model',
     });
 
     // Verify none of the original variable placeholders remain in the result

@@ -47,12 +47,12 @@ async function previewPrompt(page: Page, name: string) {
   });
 }
 
-async function report(page: Page, system: string[]) {
+async function report(page: Page, system: string[], kind: 'Prompt' | 'Context' = 'Prompt') {
   await sendMessageAndWaitForCompletion(page, 'Report the instruction markers.');
   await expect(
     page
       .locator('.message-render')
-      .getByText(`Prompt report: ${JSON.stringify({ system, user: [] })}`, { exact: true })
+      .getByText(`${kind} report: ${JSON.stringify({ system, user: [] })}`, { exact: true })
       .last(),
   ).toBeVisible();
 }
@@ -148,5 +148,40 @@ test('managed prompts are read-only, duplicable, and defaults apply only to ordi
   await page.getByRole('option', { name: 'My Agents', exact: true }).click();
   await page.getByRole('option', { name: 'Independent saved Agent', exact: true }).click();
   await report(page, ['E2E_PROMPT_AGENT']);
+  await preferences(page, request, 'inherit');
+});
+
+test('ordinary-chat defaults resolve the selected model after switches and reloads', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(90_000);
+  page.setDefaultTimeout(15_000);
+  await page.goto('/c/new');
+  await preferences(page, request, 'inherit');
+  const created = await request.post('/api/prompts', {
+    headers: await headers(page),
+    data: {
+      group: { name: 'Model context instructions' },
+      prompt: { type: 'text', prompt: 'E2E_CONTEXT[model={{current_model}}]' },
+    },
+  });
+  expect(created.ok()).toBe(true);
+  await previewPrompt(page, 'Model context instructions');
+  await page
+    .getByRole('button', { name: 'Set as default for ordinary chats', exact: true })
+    .click();
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Default instructions saved.' }),
+  ).toBeVisible();
+  await page.goto('/c/new');
+
+  for (const endpoint of MOCK_ENDPOINTS) {
+    await selectMockEndpoint(page, endpoint);
+    await report(page, [`E2E_CONTEXT[model=${endpoint.model}]`], 'Context');
+  }
+
+  await page.reload();
+  await report(page, [`E2E_CONTEXT[model=${MOCK_ENDPOINTS[1].model}]`], 'Context');
   await preferences(page, request, 'inherit');
 });

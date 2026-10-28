@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { Button, useToastContext } from '@librechat/client';
-import { Permissions, PermissionTypes, hasChatPromptVariables } from 'librechat-data-provider';
+import { Permissions, PermissionTypes, hasPromptInputVariables } from 'librechat-data-provider';
 import type { TPromptGroup, TCreatePrompt } from 'librechat-data-provider';
 import { useUpdateChatPromptPreferences } from '~/data-provider/chatPrompts';
 import { useHasAccess, useLocalize } from '~/hooks';
@@ -40,7 +40,7 @@ export default function Actions({
   }
 
   const blocked = disabled || !group._id || promptText.trim().length === 0;
-  const hasVariables = hasChatPromptVariables(promptText);
+  const hasVariables = hasPromptInputVariables(promptText);
   const duplicatePrompt = () => {
     const payload: TCreatePrompt = {
       prompt: { type: 'text', prompt: promptText },

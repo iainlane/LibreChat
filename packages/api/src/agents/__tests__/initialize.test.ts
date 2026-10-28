@@ -50,7 +50,13 @@ import {
   configSchema,
 } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
-import type { Agent, TFile, FiltersConfig, AgentInstructionsPrompt } from 'librechat-data-provider';
+import type {
+  Agent,
+  TFile,
+  TConversation,
+  FiltersConfig,
+  AgentInstructionsPrompt,
+} from 'librechat-data-provider';
 import type { ServerRequest, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import type { ResolveLinkedInstructions } from '../instructions/linked';
 import type { InitializeAgentDbMethods } from '../initialize';
@@ -142,6 +148,9 @@ import { initializeAgent } from '../initialize';
 import { primeResources } from '../resources';
 import { isFatalAgentInitializationError } from '../errors';
 import { canAgentGraphPause } from '../hitl/admission';
+import { createChatPromptService } from '../../prompts/defaults';
+import { loadAgent, loadEphemeralAgent } from '../load';
+import { loadAddedAgent } from '../added';
 
 const realUtils = jest.requireActual<typeof import('~/utils')>('~/utils');
 
@@ -2243,7 +2252,7 @@ describe('initializeAgent — stable and dynamic instruction fields', () => {
 
   it('keeps non-temporal special vars in stable instructions', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
-    agent.instructions = 'You are helping {{current_user}}.';
+    agent.instructions = 'You are {{current_model}}, helping {{current_user}}.';
     req.user = { id: 'user-1', name: 'Test User' } as never;
 
     const result = await initializeAgent(
@@ -2259,9 +2268,183 @@ describe('initializeAgent — stable and dynamic instruction fields', () => {
       db,
     );
 
-    expect(result.instructions).toBe('You are helping Test User.');
+    expect(result.instructions).toBe('You are test-model, helping Test User.');
     expect(result.additional_instructions).toBeUndefined();
   });
+
+  it.each(['primary', 'custom endpoint', 'parallel', 'saved Agent'])(
+    'resolves built-in context with the selected model for %s on each turn',
+    async (kind) => {
+      const prompt =
+        'Model {{current_model}}; user {{current_user}}; date {{current_date}}; time {{current_datetime}}; ISO {{iso_datetime}}.';
+      const groupId = '123456789012345678901234';
+      const service = createChatPromptService({
+        ensureCatalog: async () => new Map([['general', groupId]]),
+        canUsePrompts: async () => true,
+        getEffectivePermissions: async () => 1,
+        promptService: {
+          getPromptGroup: async () => ({
+            ok: true,
+            value: {
+              _id: groupId,
+              name: 'General',
+              author: 'author',
+              authorName: 'Author',
+              source: 'native',
+            },
+          }),
+          resolvePrompt: async () => ({
+            ok: true,
+            value: {
+              source: 'native',
+              groupId,
+              promptId: '123456789012345678901235',
+              prompt,
+              type: 'text',
+            },
+          }),
+        },
+      });
+      const model = kind === 'parallel' ? 'secondary-model' : 'selected-model';
+      const provider = kind === 'custom endpoint' ? 'OpenRouter' : Providers.OPENAI;
+      const observed = [];
+      for (const day of ['2026-08-31', '2026-09-01']) {
+        const {
+          agent: savedAgent,
+          req,
+          res,
+          loadTools,
+          db,
+        } = createMocks({
+          model,
+          provider,
+          overrideProvider: Providers.OPENAI,
+        });
+        savedAgent.id = 'agent_saved';
+        savedAgent.instructions = prompt;
+        req.user = { id: 'user-1', name: 'Ada' } as never;
+        req.config = {
+          config: {},
+          fileStrategy: FileSources.local,
+          imageOutputType: 'png',
+          prompts: { library: [], defaultChatPrompt: 'general' },
+        };
+        req.turnStartedAt = new Date(`${day}T06:20:00.000Z`).getTime();
+        req.body = { timezone: 'UTC' };
+        const loaderReq = { user: req.user, config: { ...req.config }, body: {} };
+        const deps = {
+          getAgent: async () => savedAgent,
+          getMCPServerTools: async () => null,
+          resolveChatInstructions: service.resolveInstructions,
+        };
+        let agent: Agent | null;
+        if (kind === 'saved Agent') {
+          agent = await loadAgent(
+            { req: loaderReq, endpoint: provider, agent_id: savedAgent.id },
+            deps,
+          );
+        } else if (kind === 'parallel') {
+          agent = await loadAddedAgent(
+            {
+              req: loaderReq,
+              conversation: {
+                model,
+                endpoint: EModelEndpoint.openAI,
+                conversationId: null,
+                title: 'New Chat',
+                createdAt: `${day}T06:20:00.000Z`,
+                updatedAt: `${day}T06:20:00.000Z`,
+              } satisfies TConversation,
+            },
+            deps,
+          );
+        } else {
+          agent = await loadEphemeralAgent(
+            {
+              req: loaderReq,
+              endpoint: provider,
+              model_parameters: { ...savedAgent.model_parameters, model },
+            },
+            deps,
+          );
+        }
+        if (agent == null) {
+          throw new Error('Expected the selected agent to load');
+        }
+
+        const result = await initializeAgent(
+          {
+            req,
+            res,
+            agent,
+            loadTools,
+            endpointOption: {
+              endpoint: EModelEndpoint.agents,
+              model_parameters: { model: 'different-request-model' },
+            },
+            allowedProviders: new Set([provider, Providers.OPENAI]),
+            isInitialAgent: kind !== 'parallel',
+          },
+          db,
+        );
+        observed.push({
+          model: result.model,
+          instructions: result.instructions,
+          dynamic: result.additional_instructions,
+        });
+      }
+
+      expect(observed).toEqual([
+        {
+          model,
+          instructions: undefined,
+          dynamic: `Model ${model}; user Ada; date 2026-08-31 (Monday); time 2026-08-31 06:20:00 +00:00 (Monday); ISO 2026-08-31T06:20:00.000Z.`,
+        },
+        {
+          model,
+          instructions: undefined,
+          dynamic: `Model ${model}; user Ada; date 2026-09-01 (Tuesday); time 2026-09-01 06:20:00 +00:00 (Tuesday); ISO 2026-09-01T06:20:00.000Z.`,
+        },
+      ]);
+    },
+  );
+
+  it.each(['current_model', 'current_user'])(
+    'screens the resolved %s value before instructions become model-bound',
+    async (variable) => {
+      const { agent, req, res, loadTools, db } = createMocks({ model: 'PRIVATE-MODEL' });
+      agent.instructions = `You are helping {{${variable}}}.`;
+      req.user = { id: 'user-1', name: 'PRIVATE-USER' } as never;
+      req.config = {
+        filters: {
+          agentInstructions: {
+            pii: {
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+            },
+          },
+        },
+      } as unknown as ServerRequest['config'];
+
+      await expect(
+        initializeAgent(
+          {
+            req,
+            res,
+            agent,
+            loadTools,
+            endpointOption: { endpoint: EModelEndpoint.agents },
+            allowedProviders: new Set([Providers.OPENAI]),
+            isInitialAgent: true,
+          },
+          db,
+        ),
+      ).rejects.toMatchObject({
+        code: 'content_filter_block',
+        body: { error: 'content_filter_block', source: 'agent_instruction', field: 'instructions' },
+      });
+    },
+  );
 
   it('appends generated artifact guidance without replacing existing dynamic instructions', async () => {
     const { generateArtifactsPrompt } = jest.requireMock('~/prompts') as {
