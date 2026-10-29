@@ -18,7 +18,7 @@ jest.mock('lodash/isEqual', () => jest.fn((a, b) => JSON.stringify(a) === JSON.s
 // Mutable startup config so tests can vary `interface.defaultPinnedTools`
 let mockStartupConfig:
   | {
-      interface?: { defaultPinnedTools?: string[] };
+      interface?: { defaultPinnedTools?: string[]; defaultMCPServers?: string[] };
       modelSpecs?: { list?: Array<{ name: string; mcpServers?: string[] }> };
     }
   | undefined;
@@ -96,6 +96,117 @@ describe('useMCPSelect', () => {
       );
 
       expect(result.current.mcpValues).toEqual([]);
+    });
+  });
+
+  describe('configured default servers', () => {
+    it.each([
+      {
+        label: 'new chat',
+        conversationId: null,
+        specName: undefined,
+        owner: true,
+        stored: null,
+        expected: ['git'],
+      },
+      {
+        label: 'stored empty selection',
+        conversationId: null,
+        specName: undefined,
+        owner: true,
+        stored: [],
+        expected: [],
+      },
+      {
+        label: 'stored selection',
+        conversationId: null,
+        specName: undefined,
+        owner: true,
+        stored: ['remote'],
+        expected: ['remote'],
+      },
+      {
+        label: 'existing chat',
+        conversationId: 'existing',
+        specName: undefined,
+        owner: true,
+        stored: null,
+        expected: [],
+      },
+      {
+        label: 'model spec',
+        conversationId: null,
+        specName: 'specific',
+        owner: true,
+        stored: null,
+        expected: [],
+      },
+      {
+        label: 'catalog consumer',
+        conversationId: null,
+        specName: undefined,
+        owner: false,
+        stored: null,
+        expected: [],
+      },
+    ])('preserves $label semantics', ({ conversationId, specName, owner, stored, expected }) => {
+      mockStartupConfig = { interface: { defaultMCPServers: ['git', 'hidden', 'git', 'unknown'] } };
+      if (stored !== null) {
+        localStorage.setItem(`${LocalStorageKeys.LAST_MCP_}new`, JSON.stringify(stored));
+      }
+      const { Wrapper, servers } = createWrapper(['git', 'remote']);
+      const { result } = renderHook(
+        () =>
+          useMCPSelect({
+            conversationId,
+            specName,
+            servers,
+            ownsChatSelection: owner,
+          }),
+        { wrapper: Wrapper },
+      );
+
+      expect(result.current.mcpValues).toStrictEqual(expected);
+    });
+
+    it('waits for configuration and the catalog, then keeps a user deselection', () => {
+      const { Wrapper, servers } = createWrapper(['git']);
+      const { result, rerender } = renderHook(
+        ({ catalog }) =>
+          useMCPSelect({
+            servers: catalog,
+            ownsChatSelection: true,
+          }),
+        { wrapper: Wrapper, initialProps: { catalog: [] as MCPServerDefinition[] } },
+      );
+      expect(result.current.mcpValues).toStrictEqual([]);
+
+      mockStartupConfig = { interface: { defaultMCPServers: ['git'] } };
+      rerender({ catalog: [] });
+      expect(result.current.mcpValues).toStrictEqual([]);
+      rerender({ catalog: servers });
+      expect(result.current.mcpValues).toStrictEqual(['git']);
+
+      act(() => result.current.setMCPValues([]));
+      rerender({ catalog: servers });
+      expect(result.current.mcpValues).toStrictEqual([]);
+    });
+
+    it('does not replace a selection made before startup configuration arrives', () => {
+      const { Wrapper, servers } = createWrapper(['git', 'remote']);
+      const { result, rerender } = renderHook(
+        () =>
+          useMCPSelect({
+            servers,
+            ownsChatSelection: true,
+          }),
+        { wrapper: Wrapper },
+      );
+      act(() => result.current.setMCPValues(['remote']));
+      mockStartupConfig = { interface: { defaultMCPServers: ['git'] } };
+      rerender();
+
+      expect(result.current.mcpValues).toStrictEqual(['remote']);
     });
   });
 

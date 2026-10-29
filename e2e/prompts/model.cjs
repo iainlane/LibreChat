@@ -27,6 +27,20 @@ class PromptReporter extends FakeChatModel {
           (message) => JSON.stringify(message.content).match(/E2E_CONTEXT\[[^\]]*\]/g) ?? [],
         );
     const contextReport = { system: context('system'), user: context('human') };
+    const lastHuman = [...messages].reverse().find((message) => message._getType() === 'human');
+    if (lastHuman?.content === 'E2E_MCP_REPORT') {
+      const active = (agentContext?.getToolsForBinding() ?? [])
+        .map((tool) => tool.name)
+        .filter((name) => name === 'tool_search' || name.includes('_mcp_'))
+        .sort();
+      const deferred = [...(agentContext?.toolRegistry?.values() ?? [])]
+        .filter((tool) => tool.name.includes('_mcp_'))
+        .map((tool) => ({ name: tool.name, deferred: tool.defer_loading === true }))
+        .sort((left, right) => left.name.localeCompare(right.name));
+      this.responses = [`MCP report: \`${JSON.stringify({ active, deferred })}\``];
+      yield* super._streamResponseChunks(messages, options, runManager);
+      return;
+    }
     this.responses = [
       contextReport.system.length + contextReport.user.length > 0
         ? `Context report: ${JSON.stringify(contextReport)}`

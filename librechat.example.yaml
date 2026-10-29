@@ -401,6 +401,10 @@ interface:
   # Valid tool keys: execute_code, web_search, file_search, skills, memory.
   # defaultEnabledTools:
   #   - 'execute_code'
+  # MCP servers selected in new ordinary chats. Stored selections take precedence,
+  # including an empty selection. Servers must be available in the chat picker.
+  # defaultMCPServers:
+  #   - 'my-server'
   # defaultPinnedTools:
   #   - 'artifacts'
   #   - 'execute_code'

@@ -200,6 +200,42 @@ export function useMCPSelect({
     [setMCPValuesRaw, setEphemeralAgent, storageContextKey],
   );
 
+  const defaultServersContext = useRef<string | null>(null);
+  useEffect(() => {
+    if (!ownsChatSelection || !isNewConvo || specName) {
+      defaultServersContext.current = null;
+      return;
+    }
+
+    const defaults = startupConfig?.interface?.defaultMCPServers;
+    if (
+      defaults == null ||
+      defaultServersContext.current === mcpAtomKey ||
+      (defaults.length > 0 && (allServers ?? servers).length === 0)
+    ) {
+      return;
+    }
+
+    defaultServersContext.current = mcpAtomKey;
+    const storageKey = `${LocalStorageKeys.LAST_MCP_}${mcpAtomKey}`;
+    if (ephemeralAgent?.mcp != null || localStorage.getItem(storageKey) != null) {
+      return;
+    }
+
+    setMCPValues([...new Set(defaults)].filter((server) => configuredServers.has(server)));
+  }, [
+    ownsChatSelection,
+    isNewConvo,
+    specName,
+    startupConfig,
+    mcpAtomKey,
+    allServers,
+    servers,
+    configuredServers,
+    ephemeralAgent?.mcp,
+    setMCPValues,
+  ]);
+
   return {
     isPinned,
     mcpValues,

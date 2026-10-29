@@ -11,6 +11,22 @@ const baseConfig = yaml.load(original);
 if (baseConfig === null || typeof baseConfig !== 'object' || Array.isArray(baseConfig)) {
   throw new Error('The mock configuration must be a YAML object.');
 }
+const baseMCPServers = 'mcpServers' in baseConfig ? baseConfig.mcpServers : undefined;
+if (
+  baseMCPServers === null ||
+  typeof baseMCPServers !== 'object' ||
+  Array.isArray(baseMCPServers)
+) {
+  throw new Error('The mock MCP configuration must be a YAML object.');
+}
+const baseMCPSettings = 'mcpSettings' in baseConfig ? baseConfig.mcpSettings : undefined;
+if (
+  baseMCPSettings === null ||
+  typeof baseMCPSettings !== 'object' ||
+  Array.isArray(baseMCPSettings)
+) {
+  throw new Error('The mock MCP settings must be a YAML object.');
+}
 const baseInterface = 'interface' in baseConfig ? baseConfig.interface : undefined;
 if (baseInterface === null || typeof baseInterface !== 'object' || Array.isArray(baseInterface)) {
   throw new Error('The mock interface configuration must be a YAML object.');
@@ -23,8 +39,12 @@ fs.writeFileSync(
     interface: {
       ...baseInterface,
       defaultEnabledTools: ['execute_code', 'skills', 'file_search'],
+      defaultMCPServers: ['e2e-memory', 'e2e-oauth'],
     },
-    mcpServers: {},
+    mcpSettings: { ...baseMCPSettings, authorizationMode: 'nonblocking' },
+    mcpServers: Object.fromEntries(
+      Object.entries(baseMCPServers).filter(([name]) => ['e2e-memory', 'e2e-oauth'].includes(name)),
+    ),
     prompts: {
       library: [{ id: 'general', name: 'General assistant', prompt: 'E2E_PROMPT_DEPLOYMENT' }],
       defaultChatPrompt: 'general',
@@ -45,6 +65,7 @@ export default defineConfig({
       ...server.env,
       CONFIG_PATH: configPath,
       E2E_USE_MEMORY_MONGO: 'true',
+      CODE_SANDBOX_PREWARM: 'false',
       LIBRECHAT_TEST_RUN_HOOK: path.resolve(__dirname, 'prompts/model.cjs'),
     },
   })),

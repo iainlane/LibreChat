@@ -134,6 +134,7 @@ export async function loadDefaultInterface({
     traceViewer: interfaceConfig?.traceViewer,
     defaultPinnedTools: interfaceConfig?.defaultPinnedTools,
     defaultEnabledTools: interfaceConfig?.defaultEnabledTools,
+    defaultMCPServers: interfaceConfig?.defaultMCPServers,
     peoplePicker: interfaceConfig?.peoplePicker,
     marketplace: interfaceConfig?.marketplace,
     remoteAgents: interfaceConfig?.remoteAgents,

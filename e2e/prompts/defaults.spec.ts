@@ -254,7 +254,12 @@ test('ordinary chats enable configured tools and preserve explicit choices', asy
   const payload: unknown = chatRequest.postDataJSON();
   expect(payload).toEqual(
     expect.objectContaining({
-      ephemeralAgent: { execute_code: false, file_search: true, skills: true },
+      ephemeralAgent: {
+        execute_code: false,
+        file_search: true,
+        skills: true,
+        mcp: ['e2e-memory', 'e2e-oauth'],
+      },
     }),
   );
   await page.reload();
@@ -282,5 +287,68 @@ test('ordinary chats enable configured tools and preserve explicit choices', asy
   await page.getByRole('option', { name: 'My Agents', exact: true }).click();
   await page.getByRole('option', { name: 'Independent tool Agent', exact: true }).click();
   await expect(enabledTools).toHaveCount(0);
+  await expect(page.getByTestId('composer-active-mcp')).toHaveCount(0);
   await report(page, ['E2E_PROMPT_AGENT']);
+});
+
+test('ordinary chats select configured MCPs without blocking on authentication', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  page.setDefaultTimeout(15_000);
+  await page.goto('/c/new');
+  await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+
+  const servers = page.getByTestId('composer-active-mcp');
+  await expect(servers).toHaveText(['E2E Memory', 'E2E OAuth']);
+  const popups: Page[] = [];
+  page.on('popup', (popup) => popups.push(popup));
+  const [chatRequest] = await Promise.all([
+    page.waitForRequest(
+      (sent) =>
+        sent.method() === 'POST' &&
+        new URL(sent.url()).pathname ===
+          `/api/agents/chat/${encodeURIComponent(MOCK_ENDPOINTS[0].label)}`,
+    ),
+    sendMessageAndWaitForCompletion(page, 'E2E_MCP_REPORT'),
+  ]);
+  expect(chatRequest.postDataJSON()).toEqual(
+    expect.objectContaining({
+      ephemeralAgent: {
+        execute_code: true,
+        file_search: true,
+        skills: true,
+        mcp: ['e2e-memory', 'e2e-oauth'],
+      },
+    }),
+  );
+  const toolReport = {
+    active: ['tool_search'],
+    deferred: ['approval_probe', 'recall_fact', 'remember_fact', 'slow_echo'].map((name) => ({
+      name: `${name}_mcp_e2e-memory`,
+      deferred: true,
+    })),
+  };
+  await expect(page.locator('.message-render code').last()).toHaveText(JSON.stringify(toolReport));
+  await expect(page.getByRole('button', { name: /Sign-in to /i })).toHaveCount(0);
+  expect(popups).toEqual([]);
+
+  await page.getByTestId('new-chat-button').click();
+  await expect(page).toHaveURL(/\/c\/new$/);
+  await expect(servers).toHaveText(['E2E Memory', 'E2E OAuth']);
+  for (const server of ['E2E Memory', 'E2E OAuth']) {
+    await servers.getByRole('button', { name: `Remove ${server}`, exact: true }).click();
+  }
+  await expect(servers).toHaveCount(0);
+  await page.reload();
+  await expect(servers).toHaveCount(0);
+  await sendMessageAndWaitForCompletion(page, 'E2E_MCP_REPORT');
+  await expect(page.locator('.message-render code').last()).toHaveText(
+    JSON.stringify({ active: [], deferred: [] }),
+  );
+  await page.getByTestId('new-chat-button').click();
+  await expect(page).toHaveURL(/\/c\/new$/);
+  await expect(servers).toHaveCount(0);
+  await page.reload();
+  await expect(servers).toHaveCount(0);
 });

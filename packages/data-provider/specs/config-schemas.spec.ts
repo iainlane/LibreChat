@@ -1632,6 +1632,22 @@ describe('interfaceSchema', () => {
     expect(interfaceSchema.safeParse({ defaultEnabledTools: [tool] }).success).toBe(false);
   });
 
+  it.each([{ servers: [] }, { servers: ['git', 'cloudflare-docs'] }])(
+    'accepts default MCP servers $servers',
+    ({ servers }) => {
+      expect(interfaceSchema.parse({ defaultMCPServers: servers }).defaultMCPServers).toStrictEqual(
+        servers,
+      );
+    },
+  );
+
+  it.each([{ servers: [''] }, { servers: [1] }, { servers: 'git' }])(
+    'rejects invalid default MCP servers $servers',
+    ({ servers }) => {
+      expect(interfaceSchema.safeParse({ defaultMCPServers: servers }).success).toBe(false);
+    },
+  );
+
   it('accepts the ephemeral retention mode', () => {
     const result = interfaceSchema.parse({ retentionMode: RetentionMode.EPHEMERAL });
     expect(result.retentionMode).toBe(RetentionMode.EPHEMERAL);

@@ -445,6 +445,15 @@ describe('loadDefaultInterface', () => {
     expect(interfaceConfig).not.toHaveProperty('defaultEnabledTools');
   });
 
+  it('passes through configured default MCP servers', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: { interface: { defaultMCPServers: ['git', 'cloudflare-docs'] } },
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.defaultMCPServers).toStrictEqual(['git', 'cloudflare-docs']);
+  });
+
   it('passes the trace viewer section through unchanged', async () => {
     const traceViewer = { enabled: true, showInputOutput: false, maxRecords: 200 };
     const interfaceConfig = await loadDefaultInterface({

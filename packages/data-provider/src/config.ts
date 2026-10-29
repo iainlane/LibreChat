@@ -3200,6 +3200,7 @@ export const interfaceSchema = z
     defaultPinnedTools: z.array(z.string()).optional(),
     /** Tools switched on in a new chat without a model spec, unless the user has a stored choice */
     defaultEnabledTools: z.array(defaultEnabledToolSchema).optional(),
+    defaultMCPServers: z.array(z.string().min(1)).optional(),
     buildInfo: z.boolean().optional(),
     /** Allows Lia, the welcome screen mascot. Users still opt in from Settings. */
     mascot: z.boolean().optional(),
